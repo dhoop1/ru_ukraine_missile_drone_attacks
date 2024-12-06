@@ -1106,7 +1106,8 @@ def reset_sorting(n_clicks):
 
 ru_ua_title = "Russian Missile and Drone Attacks against Ukraine"
 
-# app.layout
+# app.server and app.layout
+server = app.server
 app.layout = html.Div([
     html.H1(ru_ua_title),
     dbc.Row([
