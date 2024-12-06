@@ -30,7 +30,7 @@ app.layout = html.Div([
 
 @app.callback(
         Output('details-table', 'sort_by'),
-        Input('button', 'n_clicks')
+        Input('reset-sorting-btn', 'n_clicks')
 )
 def empty_sorting1(sort_by):
     if sort_by == 'hit':
@@ -44,4 +44,4 @@ def empty_sorting2(n_clicks):
     return dash.no_update
 
 if __name__ == '__main__':
-    app.run_server(debug=True, host='0.0.0.0', port=10000)
+    app.run_server(debug=True)
