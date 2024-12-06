@@ -1120,25 +1120,4 @@ app.layout = html.Div([
 ])
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
-
-# %%
-#@title Functions to (off)load variables
-
-def intro_text_load():
-    return intro_text
-
-def metrics_bar_load():
-    return metrics_bar4
-
-def attacks_table_load():
-    return attacks_table
-
-def top_models_table_load():
-    return top_models_table
-
-def ts_bar_chart_load():
-    return ts_bar_chart
-
-def details_table_load():
-    return details_table
+    app.run_server(debug=True, port=8000)
