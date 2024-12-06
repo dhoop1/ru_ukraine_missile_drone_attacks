@@ -1,1 +1,8 @@
+# General
 .venv/
+__pycache__/
+
+# Project specific
+test.py
+ua3_ru_weapons.ipynb
+working.ipynb
