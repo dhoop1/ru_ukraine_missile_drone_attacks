@@ -70,7 +70,7 @@ import gspread
 
 # Authorize gspread with Google Cloud API (per https://docs.gspread.org/en/v6.1.3/oauth2.html#enable-api-access-for-a-project)
 
-if eval(os.environ.get("GOOGLE_KAGGLE_CREDENTIALS")) is None:
+if os.environ.get("GOOGLE_KAGGLE_CREDENTIALS") is None:
 
     # gspread auth method for VS Code desktop -- requires GC service_account.json in APPDATA
     gc = gspread.service_account()
