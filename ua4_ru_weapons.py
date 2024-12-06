@@ -4,7 +4,9 @@
 # %%
 #@title ### Access Ukraine missile/UAV attacks datasets
 
-import subprocess
+import subprocess, os
+
+print(os.environ)
 
 subprocess.check_call(['pip', 'install', 'kaggle', '--quiet'])
 subprocess.check_call(['kaggle', 'datasets', 'download', 'piterfm/massive-missile-attacks-on-ukraine', '--force'])
