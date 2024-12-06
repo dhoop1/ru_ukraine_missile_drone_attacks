@@ -71,9 +71,9 @@ import gspread
 # Authorize gspread with Google Cloud API (per https://docs.gspread.org/en/v6.1.3/oauth2.html#enable-api-access-for-a-project)
 
 if os.environ.get("GOOGLE_KAGGLE_CREDENTIALS") is None:
-
-    # gspread auth method for VS Code desktop -- requires GC service_account.json in APPDATA
-    gc = gspread.service_account()
+    pass
+    # gspread auth method for VS Code desktop -- requires GC service_account.json in APPDATA -- blanked out for ua4... GitHub repo -> render.com
+    #gc = gspread.service_account()
 
 else:
     # gspread auth method for Codespaces -- requires GC service_account.json as value in GitHub 'ru_ukraine_missile_drone_attacks' repo Secrets
