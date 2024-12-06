@@ -1,5 +1,7 @@
 # General
 .venv/
+.devcontainer/
+.github/
 __pycache__/
 
 # Project specific
