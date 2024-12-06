@@ -73,8 +73,8 @@ import gspread, json
 #if os.getenv('GOOGLE_KAGGLE_CREDENTIALS') is None:
 #   gc = gspread.service_account()
 #else:
-credentials = json.loads(os.getenv('GOOGLE_KAGGLE_CREDENTIALS'))
-gc = gspread.service_account_from_dict(credentials)
+#credentials = json.loads(os.getenv('GOOGLE_KAGGLE_CREDENTIALS'))
+gc = gspread.service_account(filename='/etc/secrets/GOOGLE_KAGGLE_CREDENTIALS')
 
 # %%
 #@title #### Update 'csis_kaggle_ru_ukraine_attacks' worksheet with cleaned 'attacks_df' data
