@@ -72,10 +72,10 @@ import gspread, json
 
 # Authorize gspread with Google Cloud API (per https://docs.gspread.org/en/v6.1.3/oauth2.html#enable-api-access-for-a-project)
 
-if os.environ.get('GOOGLE_KAGGLE_CREDENTIALS') is None:
+if os.getenv('GOOGLE_KAGGLE_CREDENTIALS') is None:
    gc = gspread.service_account()
 else:
-    credentials = json.loads(os.environ.get('GOOGLE_KAGGLE_CREDENTIALS'))
+    credentials = json.loads(os.getinv('GOOGLE_KAGGLE_CREDENTIALS'))
     gc = gspread.service_account_from_dict(credentials)
 
 # %%
