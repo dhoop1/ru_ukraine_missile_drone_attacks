@@ -91,7 +91,7 @@ from datetime import date
 intro_ref = gc.open('csis_kaggle_ru_ukraine_attacks').worksheet('Introduction')
 cell_last_updated = intro_ref.find("Last Updated") # returns cell coordinates with string match
 cell_mad = intro_ref.find("missile_attacks_daily") # returns cell coordinates with string match
-intro_ref.update_cell(cell_mad.row, cell_last_updated.col, date.today()) # Cross-indexes and updates "Last Updated" cell with today's date
+intro_ref.update_cell(cell_mad.row, cell_last_updated.col, date.today().strftime("%m/%d/%Y")) # Cross-indexes and updates "Last Updated" cell with today's date
 
 # %% [markdown]
 # ## Data-cleaning
