@@ -639,7 +639,7 @@ details_data = details_data.sort_values(by=['max_l_cat', 'max_l_type', 'launched
 details_data.drop(columns=['max_l_cat', 'max_l_type'], inplace=True) # drop temporary columns used for sorting
 
 # Create variable of column names to use in detail_table
-details_columns = [{"name": i, "id": i} for i in detail_df.columns.tolist() + ['launched', 'hit', 'miss', 'destroyed', 'miss_rate']]
+details_columns = [{"name": i, "id": i} for i in detail_df.columns.tolist() + ['launched', 'hit', 'miss', 'destroyed', 'miss_rate', 'destroyed_rate']]
 
 # PX table data and html formatting
 details_table = html.Div([
@@ -668,7 +668,7 @@ details_table = html.Div([
         style_cell_conditional=[
             {'if': {'column_id': ['model', 'type', 'detail', 'maneuverability']}, 'width': '8%'},
             {'if': {'column_id': ['category', 'range', 'altitude', 'speed']}, 'width': '7%'},
-            {'if': {'column_id': ['payload', 'accuracy', 'unit_cost_usd']}, 'width': '5.33%'},
+            {'if': {'column_id': ['payload_kg', 'accuracy', 'unit_cost_usd']}, 'width': '5.33%'},
             {'if': {'column_id': ['launched', 'hit', 'miss', 'destroyed', 'miss_rate', 'destroyed_rate']}, 'width': '4%'},
         ],
         #style_table={'overflowX': 'auto'},
