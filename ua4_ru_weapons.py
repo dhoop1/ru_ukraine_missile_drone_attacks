@@ -70,10 +70,7 @@ import gspread, json
 
 # Authorize gspread with Google Cloud API (per https://docs.gspread.org/en/v6.1.3/oauth2.html#enable-api-access-for-a-project)
 
-#if os.getenv('GOOGLE_KAGGLE_CREDENTIALS') is None:
-#   gc = gspread.service_account()
-#else:
-#credentials = json.loads(os.getenv('GOOGLE_KAGGLE_CREDENTIALS'))
+# Modified to read Render.com Environment Variable
 gc = gspread.service_account(filename='/etc/secrets/GOOGLE_KAGGLE_CREDENTIALS')
 
 # %%
@@ -88,6 +85,13 @@ mad_ref.clear()
 # Import 'missile_attacks_daily' (from cleaned attacks_df) into gworksheet
 mad_upload = attacks_df.copy()
 mad_ref.update([mad_upload.columns.values.tolist()] + mad_upload.values.tolist())
+
+# Date-stamp for 'Last Updated' on Introduction sheet
+from datetime import date
+intro_ref = gc.open('csis_kaggle_ru_ukraine_attacks').worksheet('Introduction')
+cell_last_updated = intro_ref.find("Last Updated") # returns cell coordinates with string match
+cell_mad = intro_ref.find("missile_attacks_daily") # returns cell coordinates with string match
+intro_ref.update_cell(cell_mad.row, cell_last_updated.col, date.today()) # Cross-indexes and updates "Last Updated" cell with today's date
 
 # %% [markdown]
 # ## Data-cleaning
@@ -844,19 +848,27 @@ def update_top_models_table(sort_by):
 # brief description and image
 
 # Website: "https://www.kaggle.com/code/piterfm/massive-missile-attacks-on-ukraine-data-review/notebook"
-# Facebook: https://facebook.com/kpszsu
+# Facebook: "https://facebook.com/kpszsu" and "https://facebook.com/PvKPivden"
 
 intro_text = dbc.Card(
     dbc.CardBody([
         html.H4("Description", className="card-title"),
         html.P([
-            "This dashboard visualizes data on Russian missile and drone attacks in Ukraine. The data source is the Kaggle dataset ",
+            "This dashboard presents metrics on Russian missiles and drones launched against Ukraine (Oct 2022-present).",
+            html.Div(html.Img(src=dash.get_asset_url("ukraine_map_flag_transparent.png"), alt='ukraine-map', style={'width': '90%'}), style={'textAlign': 'center'}),
+            "The data source is ",
             html.A("Massive Missile Attacks on Ukraine", href="https://www.kaggle.com/datasets/piterfm/massive-missile-attacks-on-ukraine", target="_blank"),
-            " which sources all data from the Ukrainian Air Force's social media (Facebook, Twitter, Telegram, etc.) and other established sources (e.g., 'war_monitor' Telegram)."
-        ], className="card-text", style={'fontSize': '12px'},
+            ", which weekly sources its data from the Ukrainian Air Force social media (e.g. ",
+            html.A("KpsZSU", href="https://facebook.com/kpszsu"),
+            ", ",
+            html.A("PvKPivden", href="https://facebook.com/PvKPivden"),
+            ") and is also featured by ",
+            html.A("CSIS", href="https://www.csis.org/programs/futures-lab/projects/russian-firepower-strike-tracker-analyzing-missile-attacks-ukraine"),
+            ". Hooper Consulting ",
+            html.A("cleans and categorizes", href="https://docs.google.com/spreadsheets/d/1Zs705hRN7HfUOOhTZN2nNIPB6SAeKaxU1AQAkGZinzk/edit?usp=sharing"),
+            " the data from Kaggle, and delivers this dashboard via a Python Dash app, GitHub, and Render."
+        ], className="card-text", style={'fontSize': '11px'},
         ),
-        html.Div(html.Img(src="https://pbs.twimg.com/profile_images/1630572076045152256/FoDWY513_400x400.jpg", alt='kpszsu_logo', style={'width': '70%'}), style={'textAlign': 'center'}),
-        html.P(["Source: ", html.A("KpsZSU", href="https://x.com/KpsZSU/photo", target="_blank")], style={'fontSize': '8px', 'textAlign': 'center'})
     ]),
     #style={'border': '1px solid lightgray', "margin-bottom":"15px"},
     style={'border': 'none', 'background-color': 'transparent'}
