@@ -1,47 +1,10 @@
-import os, subprocess
+import gspread
 
-subprocess.check_call(['pip', 'install', 'dash', 'plotly', 'dash-html-components', 'dash-bootstrap-components'])
+gc = gspread.service_account()
 
-import dash
-from dash import html, dash_table
-from dash.dependencies import Input, Output
-import dash_bootstrap_components as dbc
+mad_ref = gc.open('csis_kaggle_ru_ukraine_attacks').worksheet('Introduction')
 
-check = os.environ.get('port')
+cell_last_updated = mad_ref.find("Last Updated")
+cell_mad = mad_ref.find("missile_attacks_daily")
 
-if check is None:
-    check = "0"
-
-details_table = html.Div([
-    html.H2("Missile & Drone Model Details"),
-    dbc.Button("Reset Sorting", id="reset-sorting-btn", color="primary", outline=True, size="sm"),
-    dash_table.DataTable(
-        id='details-table',
-        columns=['Col1'],
-        data=[[check]]
-    )
-])
-
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SLATE])
-
-app.layout = html.Div([
-    dbc.Col(details_table)
-])
-
-@app.callback(
-        Output('details-table', 'sort_by'),
-        Input('reset-sorting-btn', 'n_clicks')
-)
-def empty_sorting1(sort_by):
-    if sort_by == 'hit':
-        pass
-    else:
-        pass
-
-def empty_sorting2(n_clicks):
-    if n_clicks:
-        return []  # Reset sort_by to an empty list to clear sorting
-    return dash.no_update
-
-if __name__ == '__main__':
-    app.run_server(debug=True)
+print(cell_mad.row, cell_last_updated.col)
