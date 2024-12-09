@@ -392,12 +392,11 @@ import pandas as pd
 
 ts_bar_chart = html.Div([
 
-    # title
+    # top section - title
     dbc.Row([html.H2("Time Series for Missile and Drone Attacks Against Ukraine")]),
 
-    # first row of radio buttons
+    # middile section - radio buttons
     dbc.Row([
-
         # time_period
         dbc.Col([
             dbc.Row(html.Label("Time Period:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin-bottom':1})),
@@ -455,7 +454,7 @@ ts_bar_chart = html.Div([
 
         # yaxis2
         dbc.Col([
-            dbc.Row(html.Label("Second Y-Axis:", style={'textAlign': 'left', 'fontWeight': 'bold', 'margin-bottom':1})),
+            dbc.Row(html.Label("Second Y-Axis:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin-bottom':1})),
             dbc.Checklist(
                 id='y-axis2-toggle',
                 options=[{'label': 'Launched', 'value': 'launched'}],
@@ -465,24 +464,23 @@ ts_bar_chart = html.Div([
                 labelClassName="btn btn-outline-primary",
                 labelCheckedClassName="active"
             )
+        ]),
+
+        # category
+        dbc.Col([
+            html.H6("Category:", style={'fontWeight': 'bold', 'textAlign': 'center', 'padding-top': '5px'}),
+            dbc.Checklist(
+                id='category-slice',
+                options=[{'label': category, 'value': category} for category in merged_df['category'].unique()],
+                value=merged_df['category'].unique().tolist(),  # Default: all categories selected
+                inline=True,  # Arrange options horizontally
+                className="btn-group",
+                inputClassName="btn-check",
+                labelClassName="btn btn-outline-primary",
+                labelCheckedClassName="active"
+            ),
         ])
-    ]),
-
-
-    # second row of radio buttons
-    dbc.Row(html.Div([
-        html.H6("Category:", style={'fontWeight': 'bold', 'display': 'inline-block', 'padding-top': '5px'}),
-        dbc.Checklist(
-            id='category-slice',
-            options=[{'label': category, 'value': category} for category in merged_df['category'].unique()],
-            value=merged_df['category'].unique().tolist(),  # Default: all categories selected
-            inline=True,  # Arrange options horizontally
-            className="btn-group",
-            inputClassName="btn-check",
-            labelClassName="btn btn-outline-secondary",
-            labelCheckedClassName="active"
-        ),
-    ], style={'padding-top': '5px', 'textAlign': 'center'})),
+    ],style={'padding-top': '5px', 'textAlign': 'center'}), # center-align all radio button groups, and add top-padding
 
     # third/final row with ts_bar_chart
     dbc.Row([dcc.Graph(id='time-series-chart')])
@@ -852,9 +850,11 @@ def update_top_models_table(sort_by):
 
 intro_text = dbc.Card(
     dbc.CardBody([
-        html.H4("Description", className="card-title"),
+        html.H4("Description", className="card-title", style={'textAlign': 'center'}),
         html.P([
-            "This dashboard presents metrics on Russian missiles and drones launched against Ukraine (Oct 2022-present).",
+            "This ",
+            html.A("dashboard", href="https://ru-ukraine-missile-drone-attacks.onrender.com/"),
+            " presents metrics on Russian missiles and drones launched against Ukraine (Oct 2022-present).",
             html.Div(html.Img(src=dash.get_asset_url("ukraine_map_flag_transparent.png"), alt='ukraine-map', style={'width': '90%'}), style={'textAlign': 'center'}),
             "The data source is ",
             html.A("Massive Missile Attacks on Ukraine", href="https://www.kaggle.com/datasets/piterfm/massive-missile-attacks-on-ukraine", target="_blank"),
@@ -866,12 +866,15 @@ intro_text = dbc.Card(
             html.A("CSIS", href="https://www.csis.org/programs/futures-lab/projects/russian-firepower-strike-tracker-analyzing-missile-attacks-ukraine"),
             ". Hooper Consulting ",
             html.A("cleans and categorizes", href="https://docs.google.com/spreadsheets/d/1Zs705hRN7HfUOOhTZN2nNIPB6SAeKaxU1AQAkGZinzk/edit?usp=sharing"),
-            " the data from Kaggle, and delivers this dashboard via a Python Dash app, GitHub, and Render."
-        ], className="card-text", style={'fontSize': '11px'},
+            " the data from Kaggle, and delivers this dashboard via a Python Dash app, ",
+            html.A("GitHub", href="https://github.com/dhoop1/ru_ukraine_missile_drone_attacks"),
+            ", and Render."
+        ], className="card-text", style={'fontSize': '11px', 'textAlign': 'center'},
         ),
+        #html.P(["Source: ", html.A("KpsZSU", href="https://x.com/KpsZSU/photo", target="_blank")], style={'fontSize': '8px', 'textAlign': 'center'})
     ]),
     #style={'border': '1px solid lightgray', "margin-bottom":"15px"},
-    style={'border': 'none', 'background-color': 'transparent'}
+    style={'border': 'none', 'textAlign': 'center', 'background-color': 'rgba(211, 211, 211, 0.07)'}
 )
 
 # %% [markdown]
