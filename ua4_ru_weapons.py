@@ -70,8 +70,20 @@ import gspread, json
 
 # Authorize gspread with Google Cloud API (per https://docs.gspread.org/en/v6.1.3/oauth2.html#enable-api-access-for-a-project)
 
-# Modified to read Render.com Environment Variable
-gc = gspread.service_account(filename='/etc/secrets/GOOGLE_KAGGLE_CREDENTIALS')
+try:
+    # gspread auth method for Render.com build -- requires Env Variable Secret
+    gc = gspread.service_account(filename='/etc/secrets/GOOGLE_KAGGLE_CREDENTIALS')
+
+except FileNotFoundError:
+    if os.environ.get("GOOGLE_KAGGLE_CREDENTIALS") is None:
+
+        # gspread auth method for VS Code desktop -- requires upload into C:/(user)~/APPDATA
+        gc = gspread.service_account()
+
+    else:
+        # gspread auth method for GitHub Codespaces -- requires Secret value in GitHub 'ru_ukraine_missile_drone_attacks' repo
+        credentials = json.loads(os.environ.get("GOOGLE_KAGGLE_CREDENTIALS"))
+        gc = gspread.service_account_from_dict(credentials)
 
 # %%
 #@title #### Update 'csis_kaggle_ru_ukraine_attacks' worksheet with cleaned 'attacks_df' data
@@ -838,6 +850,12 @@ def update_top_models_table(sort_by):
 #    app.run_server(debug=True)
 
 # %% [markdown]
+
+# Install shot-scraper and headless browser (before serving Dash app to local host, which to later screenshot)
+subprocess.check_call(['pip', 'install', 'shot-scraper', '--quiet'])
+subprocess.check_call(['shot-scraper', 'install'])
+
+# %% [markdown]
 # #### DPX app: intro_info
 
 # %%
@@ -1143,3 +1161,7 @@ app.layout = html.Div([
 
 if __name__ == '__main__':
     app.run_server(debug=True)
+
+
+# Capture/save screenshot from localhost Dash app (at default host and port of 127.0.0.1:8050)
+subprocess.check_call(['shot-scraper', 'http://127.0.0.1:8050/', '-o', 'ua4_ru_weapons.png'])
