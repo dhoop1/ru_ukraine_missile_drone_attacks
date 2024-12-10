@@ -849,11 +849,6 @@ def update_top_models_table(sort_by):
 #if __name__ == '__main__':
 #    app.run_server(debug=True)
 
-# %% [markdown]
-
-# Install shot-scraper and headless browser (before serving Dash app to local host, which to later screenshot)
-subprocess.check_call(['pip', 'install', 'shot-scraper', '--quiet'])
-subprocess.check_call(['shot-scraper', 'install'])
 
 # %% [markdown]
 # #### DPX app: intro_info
@@ -1161,7 +1156,3 @@ app.layout = html.Div([
 
 if __name__ == '__main__':
     app.run_server(debug=True)
-
-
-# Capture/save screenshot from localhost Dash app (at default host and port of 127.0.0.1:8050)
-subprocess.check_call(['shot-scraper', 'http://127.0.0.1:8050/', '-o', 'ua4_ru_weapons.png'])
