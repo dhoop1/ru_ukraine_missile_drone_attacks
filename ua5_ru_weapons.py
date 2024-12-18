@@ -1,8 +1,8 @@
 # %% [markdown]
-# ## Access Kaggle API and import .csv datasets
+# ## Access Kaggle API and upload .csv datasets into CoLab
 
 # %%
-#@title ### Access Ukraine missile/UAV attacks datasets
+#@title ### Access Kaggle datasets for Ukraine missile/UAV attacks
 
 import subprocess, os
 
@@ -33,7 +33,6 @@ subprocess.check_call(['pip', 'install', 'pandas', 'numpy', 'tabulate', '--quiet
 
 import pandas as pd
 import numpy as np
-import os
 from tabulate import tabulate
 
 pd.options.display.max_rows = 10
@@ -97,13 +96,6 @@ mad_ref.clear()
 # Import 'missile_attacks_daily' (from cleaned attacks_df) into gworksheet
 mad_upload = attacks_df.copy()
 mad_ref.update([mad_upload.columns.values.tolist()] + mad_upload.values.tolist())
-
-# Date-stamp for 'Last Updated' on Introduction sheet
-from datetime import date
-intro_ref = gc.open('csis_kaggle_ru_ukraine_attacks').worksheet('Introduction')
-cell_last_updated = intro_ref.find("Last Updated") # returns cell coordinates with string match
-cell_mad = intro_ref.find("missile_attacks_daily") # returns cell coordinates with string match
-intro_ref.update_cell(cell_mad.row, cell_last_updated.col, date.today().strftime("%m/%d/%Y")) # Cross-indexes and updates "Last Updated" cell with today's date
 
 # %% [markdown]
 # ## Data-cleaning
@@ -294,6 +286,13 @@ else:
   print("Possible error and/or over-writing 'model' of cleaned entries. Check data.")
 
 # %%
+#@title ### Clean-up: Add 'hit_rate' to cmodel_df
+
+# Add hit_rate cmodel_df (simpler to do so here rather than update all above code components involving gspread)
+
+cmodel_df['hit_rate'] = (cmodel_df['hit'] / cmodel_df['launched']).round(2)
+
+# %%
 #@title ### Clean-up: Error Checking (via comparing 'cmodel_df_orig' and 'cmodel_df')
 
 print("'cmodel_df_orig' summed counts:")
@@ -316,10 +315,10 @@ print(tabulate(err_comp_df[0:], headers=err_comp_df.columns, tablefmt='simple_ou
 
 print() # blank line
 print("These discrepances are known and accepted:")
-print("C-400 and Iskander-M	7.0	7.0 -- correction from data capture error in Kaggle dataset")
-print("Iskander-M/KN-23	-1.0	3.0 -- due to rounding during clean-up")
-print("Orlan-10 and ZALA	-1.0	-1.0 -- due to rounding during clean-up")
-print("X-101/X-555 and Kalibr and X-59/X-69 -6.0	-5.0 -- due to data correction as specified in Kaggle dataset.")
+print("1. C-400 and Iskander-M	7.0	7.0 -- correction from data capture error in Kaggle dataset")
+print("2. Iskander-M/KN-23	-1.0	3.0 -- due to rounding during clean-up")
+print("3. Orlan-10 and ZALA	-1.0	-1.0 -- due to rounding during clean-up")
+print("4. X-101/X-555 and Kalibr and X-59/X-69 -6.0	-5.0 -- due to data correction as specified in Kaggle dataset.")
 print() # blank line
 
 num_known_discrep = 4    # manually entered
@@ -362,9 +361,14 @@ else:
 
 merged_df = pd.merge(cmodel_df, detail_df, on='model', how='inner')
 
+# round 'miss_rate' to two decimal places
 merged_df['miss_rate'] = merged_df['miss_rate'].round(2)
 
-merged_df
+# set 'start_date' and 'end_date' to datetime
+merged_df['time_start'] = pd.to_datetime(merged_df['time_start'], format='mixed')
+merged_df['time_end'] = pd.to_datetime(merged_df['time_end'], format='mixed')
+
+print('Merge complete.')
 
 # %% [markdown]
 # ## Data Analytics
@@ -379,18 +383,16 @@ print(tabulate(merged_df.groupby(['category'])[['launched', 'hit', 'miss', 'dest
 # %% [markdown]
 # ### DPX Components
 
+# %% [markdown]
+# #### Install and Load Dash/Plotly modules-functions
+
 # %%
 #@title Install dash/plotly modules
 
 subprocess.check_call(['pip', 'install', 'dash', 'plotly', 'dash-html-components', 'dash-core-components', 'dash-bootstrap-components', '--quiet'])
 
-# %% [markdown]
-# #### DPX app: ts_bar_chart
-
 # %%
-#@title #### ts_bar_chart
-
-# prompt: From merged_df, create a Dash Plotly time series visualization with a stacked bar chart, and the data determined by the following radio button selections. The x-axis will be time as either week, month, quarter, or year selected by a radio button (default is month). The y-axis will be 'launched', 'hit', 'miss', or 'destroyed' as selected by a radio button (default is 'launched'). The stacks in the bar chart will be either 'category' or 'model' as selected by a radio button (default is 'category').
+#@title Load most Dash/Plotly functions
 
 import dash
 from dash import dcc, html, Input, Output, dash_table, State
@@ -398,17 +400,568 @@ import dash_bootstrap_components as dbc
 import plotly.express as px
 import pandas as pd
 
-# Assuming merged_df is already defined from the previous code
+# %% [markdown]
+# #### DPX app: details_table
+
+# %%
+#@title DPX app: details_table
+
+# prompt: Using Dash Plotly and from merge_df, create a table that groups merged_df by the columns from detail_df (i.e. detail_df.columns) and aggregates 'launched', 'hit', 'miss', 'destroyed', and 'miss_rate' the rows.
+
+import dash
+from dash import dash_table, State
+
+#app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SLATE])
+
+# Create the data for the PX table, using df.groupby().agg()
+details_data = merged_df.groupby(detail_df.columns.tolist())[['launched', 'hit', 'miss', 'destroyed', 'miss_rate']].agg({
+            'launched': 'sum',
+            'hit': 'sum',
+            'miss': 'sum',
+            'destroyed': 'sum',
+            'miss_rate': 'mean'
+        }).reset_index()
+
+# Sort the details_data into category and type, descending by max 'launched' value per category and type, then by 'launched' within each 'category-type'
+details_data['miss_rate'] = details_data['miss_rate'].round(2)
+details_data['destroyed_rate'] = (details_data['destroyed'] / details_data['launched']).round(2)
+details_data['max_l_cat'] = details_data.groupby(['category'])['launched'].transform('max')
+details_data['max_l_type'] = details_data.groupby(['type'])['launched'].transform('max')
+details_data = details_data.sort_values(by=['max_l_cat', 'max_l_type', 'launched'], ascending=False, inplace=False)
+details_data.drop(columns=['max_l_cat', 'max_l_type'], inplace=True) # drop temporary columns used for sorting
+
+# Create dict of column names to use in detail_table
+details_columns = [{"name": i, "id": i} for i in detail_df.columns.tolist() + ['launched', 'hit', 'miss', 'destroyed', 'miss_rate']]
+
+# PX table data and html formatting
+details_table = html.Div([
+    html.H2("Missile & Drone Model Details"),
+    dbc.Button("Reset Sorting", id="reset-sorting-btn", color="primary", outline=True, size="sm"),
+    dash_table.DataTable(
+        id='details-table',
+        columns=details_columns,
+        data=details_data.to_dict('records'),
+        style_table={'margin-top': '10px'},
+        style_header={
+            'backgroundColor': 'rgb(30, 30, 30)',
+            'color': 'lightgray',
+            'fontWeight': 'bold',
+            'whitespace': 'normal',
+            'height': 'auto',
+            #'minwidth': '20px'
+        },
+        style_data={
+            'backgroundColor': 'rgb(50, 50, 50)',
+            'color': 'lightgray',
+        },
+        style_data_conditional=[
+            {'if': {'column_id': 'miss_rate'}, 'type': 'float', 'format': {'specifier': '.2f'}} # Format with two decimal places
+        ],
+        style_cell={'fontSize': 8, 'minwidth': '4%'},
+        style_cell_conditional=[
+            {'if': {'column_id': ['model', 'type', 'detail', 'maneuverability']}, 'width': '8%'},
+            {'if': {'column_id': ['category', 'range', 'altitude', 'speed']}, 'width': '7%'},
+            {'if': {'column_id': ['payload_kg', 'accuracy', 'unit_cost_usd']}, 'width': '5.33%'},
+            {'if': {'column_id': ['launched', 'hit', 'miss', 'destroyed', 'miss_rate', 'destroyed_rate']}, 'width': '4%'},
+        ],
+        #style_table={'overflowX': 'auto'},
+        sort_action='native',
+        sort_mode='multi',
+        page_size=10,
+        #style_table={'overflowX': 'auto', 'height': '300px', 'overflowY': 'auto'},
+        fixed_rows={'headers': True},
+    )
+], style={'margin-top': '5px'})
+
+# %% [markdown]
+# #### DPX app: attacks_table (data)
+
+# %%
+# prompt: Create attacks_table_data grouping merged_df by 'category' and summing ['launched', 'hit', 'miss', 'destroyed'] and averaging ['hit_rate', 'miss_rate', 'destroyed_rate'].
+
+# Calculate the averages for 'hit_rate', 'miss_rate', and 'destroyed_rate'
+attacks_table_data = merged_df.groupby('category', observed=False).agg(
+    launched=('launched', 'sum'),
+    hit=('hit', 'sum'),
+    hit_rate=('hit_rate', 'mean'),
+    miss=('miss', 'sum'),
+    miss_rate=('miss_rate', 'mean'),
+    destroyed=('destroyed', 'sum'),
+    destroyed_rate=('destroyed_rate', 'mean')
+).sort_values('launched', ascending=False).reset_index().to_dict('records')
+
+# Calculate totals row for the table
+attacks_table_totals = merged_df.groupby('category', observed=False).agg(
+    launched=('launched', 'sum'),
+    hit=('hit', 'sum'),
+    miss=('miss', 'sum'),
+    destroyed=('destroyed', 'sum'),
+    #hit_rate=('hit_rate', 'mean'),
+    #miss_rate=('miss_rate', 'mean'),
+    #destroyed_rate=('destroyed_rate', 'mean')
+).sum()
+
+# Create separate "avgs" dict for hit_rate, miss_rate, and destroyed_rate (from overall dataset totals)
+attacks_table_avgs = {
+    'hit_rate': (merged_df['hit'].sum() / merged_df['launched'].sum()).round(2),
+    'miss_rate': (merged_df['miss'].sum() / merged_df['launched'].sum()).round(2),
+    'destroyed_rate': (merged_df['destroyed'].sum() / merged_df['launched'].sum()).round(2)
+}
+
+# Create dict of  totals row
+attacks_totals_dict = {'category': 'Total'} # create header-only dict 
+attacks_totals_dict.update(attacks_table_totals) # add sumtotals data
+attacks_totals_dict.update(attacks_table_avgs) # add avgs data
+
+# Append totals row to the table data
+attacks_table_data.append(attacks_totals_dict)
+
+# %%
+#@title attacks_table (html)
+
+# prompt: Using Dash Plotly and from merged_df, create a table which displays the 'launched', 'hit', 'miss', and 'destroyed' summed-up counts, grouped by 'category'. Title this table as, "Missile Attacks by Category, for All Time".
+
+from dash import dash_table, html
+from dash import dash_table
+from dash.dash_table.Format import Format, Group, Scheme
+
+
+# Define cell style for 'Table' row
+total_style = [{
+    'if': {
+        'filter_query': '{category} = "Total"',  # Filter for rows where category is 'Total'
+        'column_id': list(attacks_table_data[0].keys())  # Apply across all columns
+    },
+    'backgroundColor': 'rgba(211, 211, 211, 0.1)',  # Set background color
+}]
+
+
+# Define attacks_table via html
+attacks_table = html.Div([
+    html.H4("Missile Attacks by Category"),
+    dash_table.DataTable(
+        id='attacks-table',
+        #columns=[{"name": i, "id": i} for i in ['category', 'launched', 'hit', 'miss', 'destroyed']],
+        columns=[
+            {"name": 'category', "id": 'category', "type": 'text'},  # Set 'category' to string/object type
+            {"name": 'launched', "id": 'launched', "type": 'numeric', "format": Format().group(True)},  # Set 'launched' to numeric
+            {"name": 'hit', "id": 'hit', "type": 'numeric', "format": Format().group(True)},  # Set 'hit' to numeric
+            {"name": 'hit_rate', "id": 'hit_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
+            {"name": 'miss', "id": 'miss', "type": 'numeric', "format": Format().group(True)},  # Set 'miss' to numeric
+            {"name": 'miss_rate', "id": 'miss_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
+            {"name": 'destroyed', "id": 'destroyed', "type": 'numeric', "format": Format().group(True)},  # Set 'destroyed' to numeric
+            {"name": 'destroyed_rate', "id": 'destroyed_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
+        ],
+        data=attacks_table_data,
+        style_header={
+            'backgroundColor': 'rgb(30, 30, 30)',
+            'color': 'lightgray',
+        },
+        style_data={
+            'backgroundColor': 'rgb(50, 50, 50)',
+            'color': 'lightgray',
+        },
+        style_table={
+            'overflowX': 'auto',
+            'width': '100%',
+            'margin-bottom': '10px',
+        },
+        style_cell={'fontSize': 14, 'textAlign': 'center'},
+        style_cell_conditional=[
+            {'if': {'column_id': 'category'}, 'width': '23%'}, # Set width for 'category' column
+            {'if': {'column_id': ['launched', 'hit', 'hit_rate' 'miss', 'miss_rate', 'destroyed', 'destroyed_rate']}, 'width': '11%', 'format': {'specifier': ',.0f'}}  # Equal width for other columns, and center-aligned text
+        ],
+        style_data_conditional=total_style  # apply style for 'Total' row
+    )
+])
+
+# %% [markdown]
+# #### DPX app: intro_info
+
+# %%
+#@title intro_info
+
+# brief description and image
+
+# Create kaggle_last_updated variable for the date that the kaggle dataset was last updated
+import zipfile
+import datetime
+with zipfile.ZipFile("massive-missile-attacks-on-ukraine.zip", "r") as zip_ref:
+    for file_info in zip_ref.infolist():
+       kaggle_info_date = file_info.date_time
+
+kaggle_last_updated = datetime.date(kaggle_info_date[0], kaggle_info_date[1], kaggle_info_date[2]).strftime("%m/%d/%Y")
+
+# Create intro 'Description' as dbc.Card()
+intro_text = dbc.Card(
+    dbc.CardBody([
+        html.H4("Description", className="card-title", style={'textAlign': 'center'}),
+        html.P([
+            "This ",
+            html.A("dashboard", href="https://ru-ukraine-missile-drone-attacks.onrender.com/"),
+            " presents metrics on Russian missiles & drones launched against Ukraine (Oct 2022-present).",
+            html.Div(html.Img(src="assets/ukraine_map_flag_transparent_cropped.png", alt="ukraine-map", style={'width': '90%'}), style={'textAlign': 'center'}),
+            "The data source is Kaggle-hosted ",
+            html.A("Massive Missile Attacks on Ukraine", href="https://www.kaggle.com/datasets/piterfm/massive-missile-attacks-on-ukraine", target="_blank"),
+            ", which weekly sources its data from the Ukrainian Air Force social accounts (e.g. ",
+            html.A("KpsZSU", href="https://facebook.com/kpszsu"),
+            ", ",
+            html.A("PvKPivden", href="https://facebook.com/PvKPivden"),
+            ") and is also featured by ",
+            html.A("CSIS", href="https://www.csis.org/programs/futures-lab/projects/russian-firepower-strike-tracker-analyzing-missile-attacks-ukraine"),
+            ". Hooper Consulting ",
+            html.A("cleans and enhances", href="https://docs.google.com/spreadsheets/d/1Zs705hRN7HfUOOhTZN2nNIPB6SAeKaxU1AQAkGZinzk/edit?usp=sharing"),
+            " the Kaggle data, and delivers this dashboard via a Python Dash app, ",
+            html.A("GitHub", href="https://github.com/dhoop1/ru_ukraine_missile_drone_attacks"),
+            ", and Render.",
+            #html.Br(),
+            #html.Em("Kaggle Data Updated: " + kaggle_last_updated),
+        ], className="card-text", style={'fontSize': '10px', 'textAlign': 'center'},
+        ),
+        html.P([
+            html.Em("Kaggle data updated: " + kaggle_last_updated),
+        ], className="card-text", style={'fontSize': '10px', 'textAlign': 'center', 'margin': '0px'}
+        )
+    ]),
+    #style={'border': '1px solid lightgray', "margin-bottom":"15px"},
+    style={'border': 'none', 'textAlign': 'center', 'background-color': 'rgba(211, 211, 211, 0.07)'} # set faint gray background
+)
+
+# %% [markdown]
+# #### DPX app: metrics_bar
+
+# %%
+#@title metrics_bar (data)
+
+# days_at_war
+from datetime import date
+#min_date = pd.to_datetime(merged_df['time_start'], format="mixed").min()
+start_date = pd.to_datetime("02/24/2022 12:00:00") # First day of Russia invasion against Ukraine (24 Feb 2022), as reported by the Ukrainian Air Force
+today = date.today()
+days_at_war = (today - start_date.date()).days
+
+# weeks_count
+min_date = pd.to_datetime(merged_df['time_start'], format="mixed").min()
+today = date.today()
+weeks_count = round((today - min_date.date()).days / 7, 0)
+
+# total_launched
+total_launched = merged_df['launched'].sum()
+
+# total_ru_mad_cost
+merged_df['unit_cost_usd'] = merged_df['unit_cost_usd'].astype(str).str.replace(",", "", regex=False)
+merged_df['unit_cost_usd'] = pd.to_numeric(merged_df['unit_cost_usd'], errors='coerce')
+attack_cost = merged_df['launched'] * merged_df['unit_cost_usd'].astype(float)
+total_ru_mad_cost = (attack_cost.sum()/1000000).round(0)
+
+# weekly_avg_launched
+weekly_avg_launched = total_launched / weeks_count
+
+# weekly_avg_cost
+weekly_avg_cost = (total_ru_mad_cost / weeks_count).round(0)
+
+# last_30days_launched
+merged_df['time_end'] = pd.to_datetime(merged_df['time_end'], format="mixed")
+last_30days = merged_df[merged_df['time_end'] >= (pd.Timestamp(today) - pd.Timedelta(days=30))]
+last_30days_launched = last_30days['launched'].sum()
+
+# last_30days_cost
+last_30days_cost = ((last_30days['launched'] * last_30days['unit_cost_usd'].astype(float)).sum() / 1000000).round(0)
+
+# %%
+#@title v2 metrics_bar (html.Div)
+
+# prompt: Create metrics_bar2 = html.Div() which contains days_at_war, total_launched, total_ru_mad_cost, and last_30days_launched as four Cards horizontally adjacent (which "share" a common background and outline), with the descriptor in html.H6() and the variable in html.P() smaller font size.
+
+metrics_data = [{
+        #'days-at-war': days_at_war,  # Reference actual variable
+        'total-launched': total_launched,  # Reference actual variable
+        'total-cost': total_ru_mad_cost,  # Reference actual variable
+        'weekly-avg-launched': weekly_avg_launched,  # Reference actual variable
+        'weekly-avg-cost': weekly_avg_cost,  # Reference actual variable
+        'last-30days-launched': last_30days_launched,  # Reference actual variable
+        'last-30days-cost': last_30days_cost,  # Reference actual variable
+    }]
+
+metrics_bar4 = html.Div([
+    html.H4("Summary Metrics"), # style={'textAlign': "center"}
+    dbc.Row([
+        dash_table.DataTable(
+            id='metrics-table',
+            columns=[
+                #dict(id='days-at-war', name="Days \n at War", type='numeric', format=Format().group(True)),
+                dict(id='total-launched', name="Total \n Launched", type='numeric', format=Format().group(True)),
+                dict(id='total-cost', name="Total Cost (US$M)", type='numeric', format=Format().group(True)),
+                dict(id='weekly-avg-launched', name="Weekly Avg \n Launched", type='numeric', format=Format(precision=1, scheme=Scheme.fixed)),
+                dict(id='weekly-avg-cost', name="Weekly Avg \n Cost (US$M)", type='numeric', format=Format().group(True)),
+                dict(id='last-30days-launched', name="Last 30 Days Launched", type='numeric', format=Format().group(True)),
+                dict(id='last-30days-cost', name="Last 30 Days \n Cost (US$M)", type='numeric', format=Format().group(True)),
+            ],
+            data=metrics_data,
+            style_header={
+                'backgroundColor': 'transparent',
+                'color': 'lightgray',
+                'fontWeight': 'bold',
+                'font-size': 14,
+                'border': 'none',
+                'textAlign': 'center',
+                'whiteSpace': 'pre-line',
+            },
+            style_table={
+                'overflowX': 'auto',
+                'border': 'none',
+                #'border-collapse': 'collapse',
+                'margin': 4,
+                'padding': '2% 1% 2% 0%'
+            },
+            style_data={
+                'backgroundColor': 'transparent',
+                'color': 'lightgray',
+                'border': 'none',
+            },
+            style_cell={
+                'fontSize': 14,
+                'textAlign': 'center',
+                'width': '16.7%',
+                'border': 'none',
+            },
+            style_header_conditional=[
+                {'if': {'column_id': ['total-launched', 'weekly-avg-launched', 'last-30days-launched']}, 'background-color': 'rgba(211, 211, 211, 0.2)'},
+                {'if': {'column_id': ['total-cost', 'weekly-avg-cost', 'last-30days-cost']}, 'background-color': 'rgba(211, 211, 211, 0.1)'}
+            ],
+            style_data_conditional=[
+                {'if': {'column_id': ['total-launched', 'weekly-avg-launched', 'last-30days-launched']}, 'background-color': 'rgba(211, 211, 211, 0.1)'},
+                #{'if': {'column_id': ['days-at-war', 'total-launched']}, 'background-color': 'rgba(211, 211, 211, 0.05)'}
+            ],
+        )
+    ]) # style={'border': '1px solid lightgray', 'margin': 4, 'padding': '2%'}
+])
+
+# %% [markdown]
+# #### DPX app: attack_size
+
+# %%
+#@title attack_size_avg_data
+
+# prompt: Create launched_by_category by creating a df with end_date as the index, and columns of all in 'category', where the values are 'launched' (and fill any missing entries with 0).
+
+# Create attack_size_df and convert time_end datetime to date
+attack_size_df = merged_df.copy()
+attack_size_df['time_end'] = pd.to_datetime(attack_size_df['time_end'], format="mixed").dt.date
+attack_size_df = attack_size_df.rename(columns={'time_end': 'end_date'})
+#attack_size_df['time_end'] = attack_size_df['time_end'].dt.strftime('%m-%d-%Y')
+
+# Create launched_by_category via pivot table
+launched_by_category = attack_size_df.pivot_table(index='end_date', columns='category', values='launched', aggfunc='sum', fill_value=0)
+launched_by_category['Avg Launched'] = launched_by_category.sum(axis=1)
+#launched_by_category.index = launched_by_category.index.date # converts time_end datetime to date (as index)
+launched_by_category.columns.name = None # removes pivot table level
+launched_by_category = pd.DataFrame(launched_by_category)
+
+# Create bins for daily 'launched' total counts
+bins = [0, 10, 50, 100, float('inf')]
+labels = ['<10', '10-49', '50-99', '100+']
+
+# Add column 'launched size' per bins
+launched_by_category['attack size'] = pd.cut(launched_by_category['Avg Launched'], bins=bins, labels=labels, right=False)
+
+# Create daily_average_launched_by_category
+daily_average_launched_by_category = launched_by_category.groupby('attack size', observed=False)['Avg Launched'].count().reset_index()
+daily_average_launched_by_category.columns = ['attack size', '# Attacks']
+means = launched_by_category.groupby(['attack size'], observed=False)[['UAV', 'cruise missile', 'ballistic missile', 'anti-air missile', 'aerial bomb', 'IRBM', 'Avg Launched']].mean().reset_index()
+means = means.round(1)
+daily_average_launched_by_category = means.merge(daily_average_launched_by_category, on='attack size', how='left')
+daily_average_launched_by_category_transposed = daily_average_launched_by_category.set_index('attack size').T.reset_index() # transpose df
+daily_average_launched_by_category_transposed = daily_average_launched_by_category_transposed.rename(columns={'index': 'attack size'})
+
+# %%
+#@title attack_size_avg (html)
+
+from dash import dash_table, html
+from dash import dash_table
+from dash.dash_table.Format import Format, Group, Scheme
+
+# Define style for 'total' and '# attacks' rows
+total_style = {
+    'if': {
+        'filter_query': '{attack size} = "Avg Launched"',  # Filter for rows where category is '# attacks'
+        'column_id': (['attack size'] + list(daily_average_launched_by_category_transposed.columns))  # Apply across all columns
+    },
+    'backgroundColor': 'rgba(211, 211, 211, 0.05)',  # Set background color
+}
+
+num_attacks_style = {
+    'if': {
+        'filter_query': '{attack size} = "# Attacks"',  # Filter for rows where category is '# attacks'
+        'column_id': (['attack size'] + list(daily_average_launched_by_category_transposed.columns))  # Apply across all columns
+    },
+    'type': 'numeric', 'format': Format(precision=0, scheme=Scheme.fixed),  # Set float point
+    'backgroundColor': 'rgba(211, 211, 211, 0.05)',  # Set background color
+}
+
+
+
+# Define attack_size_avg DataTable
+attack_size_avg = html.Div([
+    html.H4("Avg Launched and # Attacks, by Size", style={'margin-bottom': '12px'}),
+    dash_table.DataTable(
+        id='attack-size-avg',
+        columns=[{'id': c, 'name': c} for c in daily_average_launched_by_category_transposed.columns],
+        data=daily_average_launched_by_category_transposed.to_dict('records'),
+        style_header={
+            'backgroundColor': 'rgb(30, 30, 30)',
+            'color': 'lightgray',
+        },
+        style_data={
+            'backgroundColor': 'rgb(50, 50, 50)',
+            'color': 'lightgray',
+        },
+        style_table={
+            'overflowX': 'auto',
+            'width': '100%',
+        },
+        style_cell={'fontSize': 14, 'textAlign': 'center', 'width': '20%'},
+        style_cell_conditional=[
+            {'if': {'column_id': 'attack size'}, 'backgroundColor': 'rgb(30, 30, 30)'},
+            {'if': {'column_id': list(daily_average_launched_by_category_transposed.drop('attack size', axis=1).columns)}, 'type': 'numeric', 'format': Format(precision=1, scheme=Scheme.fixed)}
+        ],
+        style_data_conditional=[
+            total_style,
+            num_attacks_style
+        ],
+    )
+])
+
+# %%
+#@title attack_size_metrics (data)
+
+# attack_size_total
+attack_size_total = daily_average_launched_by_category['# Attacks'].sum()
+
+# attacks_per_week
+attacks_per_week = round(attack_size_total / weeks_count, 1)
+
+# avg_launched_per_attack
+avg_launched_per_attack = total_launched / attack_size_total
+
+# %%
+#@title attack_size_metrics (html)
+
+attack_size_data = [{
+        'attack-size-total': attack_size_total,
+        'attacks-per-week': attacks_per_week,
+        'avg-launched-per-attack': avg_launched_per_attack,
+    }]
+
+attack_size_bar = html.Div([
+    #html.H4("Attack Size Metrics"), # style={'textAlign': "center"} -- no title currently
+    dbc.Row([
+        dash_table.DataTable(
+            id='attack-size-bar',
+            columns=[
+                dict(id='attack-size-total', name="Total # Attacks", type='numeric', format=Format().group(True)),
+                dict(id='attacks-per-week', name="Avg # Attacks \n per Week", type='numeric', format=Format(precision=1, scheme=Scheme.fixed)),
+                dict(id='avg-launched-per-attack', name="Avg Launched \n per Attack", type='numeric', format=Format(precision=1, scheme=Scheme.fixed)),
+            ],
+            data=attack_size_data,
+            style_header={
+                'backgroundColor': 'transparent',
+                'color': 'lightgray',
+                'fontWeight': 'bold',
+                'font-size': 14,
+                'border': 'none',
+                'textAlign': 'center',
+                'whiteSpace': 'pre-line',
+            },
+            style_table={
+                'overflowX': 'auto',
+                'border': 'none',
+                #'border-collapse': 'collapse',
+                'margin': 4,
+                'padding': '2% 1% 2% 0%'
+            },
+            style_data={
+                'backgroundColor': 'transparent',
+                'color': 'lightgray',
+                'border': 'none',
+            },
+            style_cell={
+                'fontSize': 14,
+                'textAlign': 'center',
+                'width': '16.7%',
+                'border': 'none',
+            },
+            style_header_conditional=[
+                {'if': {'column_id': ['attack-size-total', 'avg-launched-per-attack']}, 'background-color': 'rgba(211, 211, 211, 0.2)'},
+                {'if': {'column_id': ['attacks-per-week']}, 'background-color': 'rgba(211, 211, 211, 0.1)'}
+            ],
+            style_data_conditional=[
+                {'if': {'column_id': ['attack-size-total', 'avg-launched-per-attack']}, 'background-color': 'rgba(211, 211, 211, 0.1)'},
+            ],
+        )
+    ], style={'margin-top': '10px'})
+])
+
+# %% [markdown]
+# #### DPX app: ts_bar_chart
+
+# %%
+#@title #### dropdown_items (html)
+
+# range_dropdown
+range_dropdown = dbc.Col([
+    dbc.Row(html.Label("Range:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin-bottom':1})),
+    dcc.Dropdown(
+        id='range-dropdown',
+        options=[{'label': val, 'value': val} for val in merged_df['range'].unique()],
+        value=merged_df['range'].unique().tolist(),
+        multi=True,
+        style={'background': '#3a3f44'},
+        #style={'display': 'block'}
+    )
+])
+
+# speed_dropdown
+speed_dropdown = dbc.Col([
+    dbc.Row(html.Label("Speed:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin-bottom':1})),
+    dcc.Dropdown(
+        id='speed-dropdown',
+        options=[{'label': val, 'value': val} for val in merged_df['speed'].unique()],
+        value=merged_df['speed'].unique().tolist(),
+        multi=True,
+        style={'background': '#3a3f44'},
+        #style={'display': 'block'}
+    )
+])
+
+# altitude_dropdown
+altitude_dropdown = dbc.Col([
+    dbc.Row(html.Label("Altitude:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin-bottom':1})),
+    dcc.Dropdown(
+        id='altitude-dropdown',
+        options=[{'label': val, 'value': val} for val in merged_df['altitude'].unique()],
+        value=merged_df['altitude'].unique().tolist(),
+        multi=True,
+        style={'background': '#3a3f44'},
+        #style={'display': 'block'}
+    )
+])
+
+# %%
+#@title #### ts_bar_chart
+
+# prompt: From merged_df, create a Dash Plotly time series visualization with a stacked bar chart, and the data determined by the following radio button selections. The x-axis will be time as either week, month, quarter, or year selected by a radio button (default is month). The y-axis will be 'launched', 'hit', 'miss', or 'destroyed' as selected by a radio button (default is 'launched'). The stacks in the bar chart will be either 'category' or 'model' as selected by a radio button (default is 'category').
 
 #app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SLATE])
 
 ts_bar_chart = html.Div([
 
-    # top section - title
+    # title
     dbc.Row([html.H2("Time Series for Missile and Drone Attacks Against Ukraine")]),
 
-    # middile section - radio buttons
+    # first row - radio buttons
     dbc.Row([
+
         # time_period
         dbc.Col([
             dbc.Row(html.Label("Time Period:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin-bottom':1})),
@@ -476,11 +1029,16 @@ ts_bar_chart = html.Div([
                 labelClassName="btn btn-outline-primary",
                 labelCheckedClassName="active"
             )
-        ]),
+        ])
+    ]),
 
-        # category
+
+    # second row - radio buttons
+    dbc.Row([
+
+        # 'category' multiple-select buttons
         dbc.Col([
-            html.H6("Category:", style={'fontWeight': 'bold', 'textAlign': 'center', 'padding-top': '5px'}),
+            html.H6("Category:", style={'fontWeight': 'bold', 'display': 'inline-block', 'padding-top': '5px'}),
             dbc.Checklist(
                 id='category-slice',
                 options=[{'label': category, 'value': category} for category in merged_df['category'].unique()],
@@ -488,521 +1046,36 @@ ts_bar_chart = html.Div([
                 inline=True,  # Arrange options horizontally
                 className="btn-group",
                 inputClassName="btn-check",
-                labelClassName="btn btn-outline-primary",
+                labelClassName="btn btn-outline-secondary",
                 labelCheckedClassName="active"
             ),
-        ])
-    ],style={'padding-top': '5px', 'textAlign': 'center'}), # center-align all radio button groups, and add top-padding
+        ], style={'padding-top': '10px', 'textAlign': 'center'}),
 
-    # third/final row with ts_bar_chart
-    dbc.Row([dcc.Graph(id='time-series-chart')])
-
-])
-
-# %% [markdown]
-# ##### ts_bar_chart @app.callback
-
-# %%
-#@title ts_bar_chart @app.callback
-
-#@app.callback(
-#    Output('time-series-chart', 'figure'),
-#    Input('time-period', 'value'),
-#    Input('y-axis-value', 'value'),
-#    Input('stacking-category', 'value'),
-#    Input('y-axis2-toggle', 'value')
-#)
-def update_chart(time_period, y_axis_value, stacking_category, y_axis2):
-    # Resample the data based on the selected time period
-    temp_df3 = merged_df.copy()
-    temp_df3['time_end'] = pd.to_datetime(merged_df['time_end'], format="mixed")
-    temp_df3['time_period'] = temp_df3['time_end'].dt.to_period(time_period)
-    temp_df3['time_period'] = temp_df3['time_period'].astype(str)
-
-    # 1. Generate complete time range
-    all_periods = pd.period_range(
-        start=temp_df3['time_end'].min(),
-        end=temp_df3['time_end'].max(),
-        freq=time_period
-    ).astype(str).tolist()
-
-    # Group and sum data
-    grouped_data = temp_df3.groupby(['time_period', stacking_category])[y_axis_value].sum().reset_index()
-
-    # 2. Reindex and fill missing values
-    # Create a MultiIndex from all_periods and unique stacking_category values
-    all_categories = grouped_data[stacking_category].unique()
-    full_index = pd.MultiIndex.from_product([all_periods, all_categories], names=['time_period', stacking_category])
-
-    # Reindex the grouped data
-    reindexed_data = grouped_data.set_index(['time_period', stacking_category]).reindex(full_index, fill_value=0).reset_index()
-
-    # 3. Create the stacked bar chart
-    fig = px.bar(
-        reindexed_data,
-        x='time_period',
-        y=y_axis_value,
-        color=stacking_category,
-        title=f"{y_axis_value.capitalize()} by {stacking_category.capitalize()} over Time",
-        barmode="stack"
-    )
-
-    fig.update_layout(
-        font_color="gray",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        xaxis_title=None,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=-0.2,  # Adjust this value to fine-tune the legend's position
-            xanchor="center",
-            x=0.5  # Adjust this value to fine-tune the legend's position
-        )
-    )
-
-    # 4. Create a line chart from the second axis for 'launched' (if y_axis_value not 'launched')
-    if 'launched' in y_axis2:
-
-        launched_data = temp_df3.groupby('time_period')['launched'].sum().reset_index()
-        #yaxis2_range = [0, launched_data['launched'].max()]
-
-        fig.add_scatter(
-            x=launched_data['time_period'],
-            y=launched_data['launched'],
-            mode='lines',
-            name='launched',
-            yaxis='y2',
-            line=dict(color='red')
-        )
-
-        fig.update_layout(
-            yaxis2=dict(
-                title='launched',
-                title_font=dict(color='red'),
-                overlaying='y',
-                side='right',
-                matches='y',
-                #range=yaxis2_range,
-                showgrid=False,
-                #gridcolor='gray',
-                #griddash='dot',
-                tickfont=dict(color='red'),
-            ),
-        )
-
-    # 5. Adjust legend
-
-    # Remove if time_period is 'W'
-    if time_period == 'W':
-        fig.update_layout(
-            showlegend=False
-        )
-
-    # Space further down on y-axis if Stacked Bar Feature is 'model'
-    if stacking_category == 'model':
-        fig.update_layout(
-            legend=dict(
-                y=-0.4
-            )
-        )
-
-    return fig
-
-#app.layout = html.Div([
-#    dbc.Row([ts_bar_chart]),
-#    dbc.Row([details_table])
-#    ])
-
-#if __name__ == '__main__':
-    #app.run_server(debug=True)
-#    app.run_server(mode='jupyterlab', debug=True)
-
-# %% [markdown]
-# #### DPX app: details_table
-
-# %%
-#@title DPX app: details_table
-
-# prompt: Using Dash Plotly and from merge_df, create a table that groups merged_df by the columns from detail_df (i.e. detail_df.columns) and aggregates 'launched', 'hit', 'miss', 'destroyed', and 'miss_rate' the rows.
-
-import dash
-from dash import dash_table, State
-
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SLATE])
-
-# Create the data for the PX table, using df.groupby().agg()
-details_data = merged_df.groupby(detail_df.columns.tolist())[['launched', 'hit', 'miss', 'destroyed', 'miss_rate']].agg({
-            'launched': 'sum',
-            'hit': 'sum',
-            'miss': 'sum',
-            'destroyed': 'sum',
-            'miss_rate': 'mean'
-        }).reset_index()
-
-# Sort the details_data into category and type, descending by max 'launched' value per category and type, then by 'launched' within each 'category-type'
-details_data['miss_rate'] = details_data['miss_rate'].round(2)
-details_data['destroyed_rate'] = (details_data['destroyed'] / details_data['launched']).round(2)
-details_data['max_l_cat'] = details_data.groupby(['category'])['launched'].transform('max')
-details_data['max_l_type'] = details_data.groupby(['type'])['launched'].transform('max')
-details_data = details_data.sort_values(by=['max_l_cat', 'max_l_type', 'launched'], ascending=False, inplace=False)
-details_data.drop(columns=['max_l_cat', 'max_l_type'], inplace=True) # drop temporary columns used for sorting
-
-# Create variable of column names to use in detail_table
-details_columns = [{"name": i, "id": i} for i in detail_df.columns.tolist() + ['launched', 'hit', 'miss', 'destroyed', 'miss_rate', 'destroyed_rate']]
-
-# PX table data and html formatting
-details_table = html.Div([
-    html.H2("Missile & Drone Model Details"),
-    dbc.Button("Reset Sorting", id="reset-sorting-btn", color="primary", outline=True, size="sm"),
-    dash_table.DataTable(
-        id='details-table',
-        columns=details_columns,
-        data=details_data.to_dict('records'),
-        style_header={
-            'backgroundColor': 'rgb(30, 30, 30)',
-            'color': 'lightgray',
-            'fontWeight': 'bold',
-            'whitespace': 'normal',
-            'height': 'auto',
-            #'minwidth': '20px'
-        },
-        style_data={
-            'backgroundColor': 'rgb(50, 50, 50)',
-            'color': 'lightgray',
-        },
-        style_data_conditional=[
-            {'if': {'column_id': 'miss_rate'}, 'type': 'float', 'format': {'specifier': '.2f'}} # Format with two decimal places
-        ],
-        style_cell={'fontSize': 8, 'minwidth': '4%'},
-        style_cell_conditional=[
-            {'if': {'column_id': ['model', 'type', 'detail', 'maneuverability']}, 'width': '8%'},
-            {'if': {'column_id': ['category', 'range', 'altitude', 'speed']}, 'width': '7%'},
-            {'if': {'column_id': ['payload_kg', 'accuracy', 'unit_cost_usd']}, 'width': '5.33%'},
-            {'if': {'column_id': ['launched', 'hit', 'miss', 'destroyed', 'miss_rate', 'destroyed_rate']}, 'width': '4%'},
-        ],
-        #style_table={'overflowX': 'auto'},
-        sort_action='native',
-        sort_mode='multi',
-        page_size=10,
-        #style_table={'overflowX': 'auto', 'height': '300px', 'overflowY': 'auto'},
-        fixed_rows={'headers': True},
-    )
-])
-
-# %% [markdown]
-# ##### details_table @app.callback
-
-# %%
-#@app.callback(
-#    Output('details-table', 'sort_by'),
-#    Input('reset-sorting-btn', 'n_clicks'),
-#    #State('details-table', 'sort_by') # the 'Reset Sorting' button doesn't work with State active
-#)
-def reset_sorting(n_clicks):
-    if n_clicks:
-        return []  # Reset sort_by to an empty list to clear sorting
-    return dash.no_update  # Don't update if button hasn't been clicked
-
-#app.layout = html.Div([details_table])
-
-#if __name__ == '__main__':
-#    app.run_server(debug=True)
-
-# %% [markdown]
-# #### DPX app: attacks_table
-
-# %%
-#@title attacks_table
-
-# prompt: Using Dash Plotly and from merged_df, create a table which displays the 'launched', 'hit', 'miss', and 'destroyed' summed-up counts, grouped by 'category'. Title this table as, "Missile Attacks by Category, for All Time".
-
-from dash import dash_table, html
-from dash import dash_table
-from dash.dash_table.Format import Format, Group, Scheme
-
-# Assuming merged_df is already defined from the previous code
-
-attacks_table = html.Div([
-    html.H4("Missile Attacks by Category"),
-    dash_table.DataTable(
-        id='attacks-table',
-        #columns=[{"name": i, "id": i} for i in ['category', 'launched', 'hit', 'miss', 'destroyed']],
-        columns=[
-            {"name": 'category', "id": 'category', "type": 'text'},  # Set 'category' to string/object type
-            {"name": 'launched', "id": 'launched', "type": 'numeric', "format": Format().group(True)},  # Set 'launched' to numeric
-            {"name": 'hit', "id": 'hit', "type": 'numeric', "format": Format().group(True)},  # Set 'hit' to numeric
-            {"name": 'miss', "id": 'miss', "type": 'numeric', "format": Format().group(True)},  # Set 'miss' to numeric
-            {"name": 'destroyed', "id": 'destroyed', "type": 'numeric', "format": Format().group(True)}  # Set 'destroyed' to numeric
-        ],
-        data=merged_df.groupby('category')[['launched', 'hit', 'miss', 'destroyed']].sum().sort_values('hit', ascending=False).reset_index().to_dict('records'),
-        style_header={
-            'backgroundColor': 'rgb(30, 30, 30)',
-            'color': 'lightgray',
-        },
-        style_data={
-            'backgroundColor': 'rgb(50, 50, 50)',
-            'color': 'lightgray',
-        },
-        style_table={
-            'overflowX': 'auto',
-            'width': '100%',
-        },
-        style_cell={'fontSize': 14, 'textAlign': 'center'},
-        style_cell_conditional=[
-            {'if': {'column_id': 'category'}, 'width': '32%'}, # Set width for 'category'
-            {'if': {'column_id': ['launched', 'hit', 'miss', 'destroyed']}, 'width': '17%', 'format': {'specifier': ',.0f'}}  # Equal width for other columns, and center-aligned text
-        ]
-    )
-])
-
-# %% [markdown]
-# #### DPX app: top_models_table
-
-# %%
-#@title top_models_table
-
-# prompt: Create a Dash Plotly Express data table from merge_df with the columns 'model', 'launched', 'hit', 'miss', 'miss_rate', 'destroyed', and 'destroyed_rate', which shows ten models with the highest 'hit value', lowest 'miss_rate', or highest 'destroyed_rate' (using radio buttons to switch between 'hit', 'miss_rate', and 'destroyed_rate'). Format the radio buttons using dash-bootstrap-components.
-
-import dash_bootstrap_components as dbc
-from dash import dash_table
-from dash.dash_table.Format import Format, Group, Scheme
-
-# Aggregate data for top_models table from merged_df, and add 'hit_rate' column
-tm_df = merged_df.groupby('model').agg(
-    launched=('launched', 'sum'),
-    hit=('hit', 'sum'),
-    miss=('miss', 'sum'),
-    destroyed=('destroyed', 'sum'),
-    miss_rate=('miss_rate', 'mean'),
-    destroyed_rate=('destroyed_rate', 'mean')
-).reset_index()
-tm_df['hit_rate'] = 1 - tm_df['miss_rate']
-
-tm_df['hit_rate'] = (1 - tm_df['miss_rate']).round(2)
-tm_df['miss_rate'] = tm_df['miss_rate'].round(2)
-tm_df['destroyed_rate'] = tm_df['destroyed_rate'].round(2)
-
-# Define app and stylesheet/theme
-#app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SLATE])
-
-# Define top_models_table with radio buttons
-top_models_table = html.Div([
-    html.H4("Top-striking Models"),
-    dbc.RadioItems(
-        id='sort-by-radio',
-        options=[
-            {'label': 'Hit (max)', 'value': 'hit'},
-            {'label': 'Hit Rate (max)', 'value': 'hit_rate'},
-            {'label': 'Destroyed Rate (min)', 'value': 'destroyed_rate'}
-        ],
-        value='hit',  # Default sorting
-        inline=True
-    ),
-    dash_table.DataTable(
-        id='top-models-table',
-        columns=[
-            dict(id='model', name='model'),
-            dict(id='launched', name='launched', type='numeric', format=Format().group(True)),
-            dict(id='hit', name='hit', type='numeric', format=Format().group(True)),
-            dict(id='hit_rate', name='hit_rate', type='numeric', format=Format(precision=0, scheme=Scheme.percentage)), # format added
-            dict(id='miss', name='miss', type='numeric', format=Format().group(True)),
-            dict(id='miss_rate', name='miss_rate', type='numeric', format=Format(precision=0, scheme=Scheme.percentage)), # format added
-            dict(id='destroyed', name='destroyed', type='numeric', format=Format().group(True)),
-            dict(id='destroyed_rate', name='destroyed_rate', type='numeric', format=Format(precision=0, scheme=Scheme.percentage)) # format added
-        ],
-        data=[],  # Initialize with empty data
-        style_header={
-            'backgroundColor': 'rgb(30, 30, 30)',
-            'color': 'lightgray'
-        },
-        style_table={
-            'overflowX': 'auto',
-        },
-        style_data={
-            'backgroundColor': 'rgb(50, 50, 50)',
-            'color': 'lightgray'
-        },
-        style_cell={'fontSize': 14, 'textAlign': 'center', 'className': 'pr-2'},
-    )
-])
-
-# %% [markdown]
-# ##### top_models_table @app.callback()
-
-# %%
-#@app.callback(
-#    Output('top-models-table', 'data'),
-#    Input('sort-by-radio', 'value')
-#)
-def update_top_models_table(sort_by):
-    if sort_by == 'hit':
-        top_models = tm_df.nlargest(10, 'hit')
-    elif sort_by == 'hit_rate':
-        top_models = tm_df.nlargest(10, 'hit_rate')
-    elif sort_by == 'destroyed_rate':
-        top_models = tm_df.nsmallest(10, 'destroyed_rate')
-    return top_models.to_dict('records')
-
-#app.layout = html.Div([top_models_table])
-
-#if __name__ == '__main__':
-#    app.run_server(debug=True)
-
-
-# %% [markdown]
-# #### DPX app: intro_info
-
-# %%
-#@title intro_info
-
-# brief description and image
-
-# Website: "https://www.kaggle.com/code/piterfm/massive-missile-attacks-on-ukraine-data-review/notebook"
-# Facebook: "https://facebook.com/kpszsu" and "https://facebook.com/PvKPivden"
-
-intro_text = dbc.Card(
-    dbc.CardBody([
-        html.H4("Description", className="card-title", style={'textAlign': 'center'}),
-        html.P([
-            "This ",
-            html.A("dashboard", href="https://ru-ukraine-missile-drone-attacks.onrender.com/"),
-            " presents metrics on Russian missiles and drones launched against Ukraine (Oct 2022-present).",
-            html.Div(html.Img(src=dash.get_asset_url("ukraine_map_flag_transparent.png"), alt='ukraine-map', style={'width': '90%'}), style={'textAlign': 'center'}),
-            "The data source is ",
-            html.A("Massive Missile Attacks on Ukraine", href="https://www.kaggle.com/datasets/piterfm/massive-missile-attacks-on-ukraine", target="_blank"),
-            ", which weekly sources its data from the Ukrainian Air Force social media (e.g. ",
-            html.A("KpsZSU", href="https://facebook.com/kpszsu"),
-            ", ",
-            html.A("PvKPivden", href="https://facebook.com/PvKPivden"),
-            ") and is also featured by ",
-            html.A("CSIS", href="https://www.csis.org/programs/futures-lab/projects/russian-firepower-strike-tracker-analyzing-missile-attacks-ukraine"),
-            ". Hooper Consulting ",
-            html.A("cleans and categorizes", href="https://docs.google.com/spreadsheets/d/1Zs705hRN7HfUOOhTZN2nNIPB6SAeKaxU1AQAkGZinzk/edit?usp=sharing"),
-            " the data from Kaggle, and delivers this dashboard via a Python Dash app, ",
-            html.A("GitHub", href="https://github.com/dhoop1/ru_ukraine_missile_drone_attacks"),
-            ", and Render."
-        ], className="card-text", style={'fontSize': '11px', 'textAlign': 'center'},
-        ),
-        #html.P(["Source: ", html.A("KpsZSU", href="https://x.com/KpsZSU/photo", target="_blank")], style={'fontSize': '8px', 'textAlign': 'center'})
     ]),
-    #style={'border': '1px solid lightgray', "margin-bottom":"15px"},
-    style={'border': 'none', 'textAlign': 'center', 'background-color': 'rgba(211, 211, 211, 0.07)'}
-)
 
-# %% [markdown]
-# #### DPX app: metrics_bar
+    # third row - ts_bar_chart
+    dbc.Row([dcc.Graph(id='time-series-chart')]),
 
-# %%
-#@title metrics_table (data)
 
-# days_at_war
-from datetime import date
-min_date = pd.to_datetime(merged_df['time_start'], format="mixed").min()
-today = date.today()
-days_at_war = (today - min_date.date()).days
-
-# total_launched
-total_launched = merged_df['launched'].sum()
-
-# total_ru_mad_cost
-merged_df['unit_cost_usd'] = merged_df['unit_cost_usd'].astype(str).str.replace(",", "", regex=False)
-merged_df['unit_cost_usd'] = pd.to_numeric(merged_df['unit_cost_usd'], errors='coerce')
-attack_cost = merged_df['launched'] * merged_df['unit_cost_usd'].astype(float)
-total_ru_mad_cost = (attack_cost.sum()/1000000000).round(1)
-
-# last_30days_launched
-merged_df['time_end'] = pd.to_datetime(merged_df['time_end'], format="mixed")
-last_30days_launched = merged_df[merged_df['time_end'] >= (pd.Timestamp(today) - pd.Timedelta(days=30))]['launched'].sum()
-
-# %%
-#@title v2 metrics_table (html.Div)
-
-# prompt: Create metrics_bar2 = html.Div() which contains days_at_war, total_launched, total_ru_mad_cost, and last_30days_launched as four Cards horizontally adjacent (which "share" a common background and outline), with the descriptor in html.H6() and the variable in html.P() smaller font size.
-
-metrics_data = [{
-        'days-at-war': days_at_war,  # Reference actual variable
-        'total-cost': total_ru_mad_cost,  # Reference actual variable
-        'total-launched': total_launched,  # Reference actual variable
-        'last-30days-launched': last_30days_launched  # Reference actual variable
-    }]
-
-metrics_bar4 = html.Div([
-    html.H4("Summary Metrics"), # style={'textAlign': "center"}
+    # fourth row - details dropdown checklists (toggle display off/on)
     dbc.Row([
-        dash_table.DataTable(
-            id='metrics-table',
-            columns=[
-                dict(id='days-at-war', name="Days \n at War", type='numeric', format=Format().group(True)),
-                dict(id='total-cost', name="Total Cost (US$B)", type='numeric', format=Format(precision=1, scheme=Scheme.fixed)),
-                dict(id='total-launched', name="Total \n Launched", type='numeric', format=Format().group(True)),
-                dict(id='last-30days-launched', name="Last 30 Days Launched", type='numeric', format=Format().group(True)),
-            ],
-            data=metrics_data,
-            style_header={
-                'backgroundColor': 'transparent',
-                'color': 'lightgray',
-                'fontWeight': 'bold',
-                'font-size': 14,
-                'border': 'none',
-                'textAlign': 'center',
-                'whiteSpace': 'pre-line',
-            },
-            style_table={
-                'overflowX': 'auto',
-                'border': 'none',
-                #'border-collapse': 'collapse',
-                'margin': 4,
-                'padding': '2% 1% 2% 0%'
-            },
-            style_data={
-                'backgroundColor': 'transparent',
-                'color': 'lightgray',
-                'border': 'none',
-            },
-            style_cell={
-                'fontSize': 14,
-                'textAlign': 'center',
-                'width': '25%',
-                'border': 'none',
-            },
-            style_header_conditional=[
-                {'if': {'column_id': ['total-cost', 'last-30days-launched']}, 'background-color': 'rgba(211, 211, 211, 0.2)'},
-                {'if': {'column_id': ['days-at-war', 'total-launched']}, 'background-color': 'rgba(211, 211, 211, 0.1)'}
-            ],
-            style_data_conditional=[
-                {'if': {'column_id': ['total-cost', 'last-30days-launched']}, 'background-color': 'rgba(211, 211, 211, 0.1)'},
-                #{'if': {'column_id': ['days-at-war', 'total-launched']}, 'background-color': 'rgba(211, 211, 211, 0.05)'}
-            ],
-        )
-    ]) # style={'border': '1px solid lightgray', 'margin': 4, 'padding': '2%'}
-])
+        #dbc.Col(type_dropdown),
+        dbc.Col(range_dropdown),
+        dbc.Col(speed_dropdown),
+        dbc.Col(altitude_dropdown),
+    ], style={'margin-bottom': '30px', 'margin-left': '10px', 'margin-right': '10px'})
+
+], style={'margin-top': '5px'})
 
 # %% [markdown]
-# #### DPX app and @app.callback (combined)
+# ### DPX @app.callback(), app.layout(), and app.server -- combined
 
 # %%
-#@title DPX app + @app.callback
-
 # Define app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SLATE])
 
-# ---------------------------------------------------------------------------
-
-# top_models_table
-@app.callback(
-    Output('top-models-table', 'data'),
-    Input('sort-by-radio', 'value')
-)
-def update_top_models_table(sort_by):
-    if sort_by == 'hit':
-        top_models = tm_df.nlargest(10, ['hit', 'hit_rate'])
-    elif sort_by == 'hit_rate':
-        top_models = tm_df.nlargest(10, ['hit_rate', 'hit'])
-    elif sort_by == 'destroyed_rate':
-        top_models = tm_df.nsmallest(10, ['destroyed_rate', 'hit'])
-    return top_models.to_dict('records')
-
+#app.config['suppress_callback_exceptions'] = True # allow app.callbacks() generated by other callbacks
+app.config.suppress_callback_exceptions = True
 
 # ---------------------------------------------------------------------------
 
@@ -1013,11 +1086,31 @@ def update_top_models_table(sort_by):
     Input('y-axis-value', 'value'),
     Input('stacked-bar-feature', 'value'),
     Input('y-axis2-toggle', 'value'),
-    Input('category-slice', 'value')
+    Input('category-slice', 'value'),
+    #Input('details-toggle', 'value'),
+    #Input('type-dropdown', 'value'),
+    Input('range-dropdown', 'value'),
+    Input('speed-dropdown', 'value'),
+    Input('altitude-dropdown', 'value'),
 )
-def update_chart(time_period, y_axis_value, stacked_bar_feature, y_axis2, category_slice):
-    # Resample the data based on the selected time period
+def update_chart(time_period, y_axis_value, stacked_bar_feature, y_axis2, category_slice, selected_range, selected_speed, selected_altitude):
+    # Create a temp_df from merged_df
     temp_df3 = merged_df.copy()
+
+    # If toggled-on details_dropdowns, then apply filters
+    #if '(show below)' in details_dropdown:
+
+    # Filter the data based on model details 'type', 'range', 'altitude', and 'speed'
+    #if selected_type:
+    #    temp_df3 = temp_df3[temp_df3['type'].isin(selected_type)]
+    if selected_range:
+        temp_df3 = temp_df3[temp_df3['range'].isin(selected_range)]
+    if selected_speed:
+        temp_df3 = temp_df3[temp_df3['speed'].isin(selected_speed)]
+    if selected_altitude:
+        temp_df3 = temp_df3[temp_df3['altitude'].isin(selected_altitude)]
+
+    # Add 'time_period' to temp_df3 (by resampling 'time_end')
     temp_df3['time_end'] = pd.to_datetime(merged_df['time_end'], format="mixed")
     temp_df3['time_period'] = temp_df3['time_end'].dt.to_period(time_period)
     temp_df3['time_period'] = temp_df3['time_period'].astype(str)
@@ -1114,7 +1207,11 @@ def update_chart(time_period, y_axis_value, stacked_bar_feature, y_axis2, catego
             )
         )
 
+    # 6. Update details-dropdown
+
+
     return fig
+
 
 # ---------------------------------------------------------------------------
 
@@ -1134,17 +1231,19 @@ def reset_sorting(n_clicks):
 
 ru_ua_title = "Russian Missile and Drone Attacks against Ukraine"
 
-# app.server and app.layout
-server = app.server
+# app.layout
 app.layout = html.Div([
     html.H1(ru_ua_title),
     dbc.Row([
         dbc.Col([intro_text], width=2),
         dbc.Col([
             dbc.Row([metrics_bar4], className='pt-0 pb-6 pl-2 pr-2'),
-            dbc.Row([attacks_table], className='pt-3'),
+            dbc.Row([attacks_table], className='pt-6'),
+            ], width=6, style={'margin-top':15}),
+        dbc.Col([
+            dbc.Row([attack_size_avg], className='pt-6 pb-0 pl-2 pr-2'),
+            dbc.Row([attack_size_bar], className='pb-3'),
             ], width=4, style={'margin-top':15}),
-        dbc.Col([top_models_table], width=6, style={'margin-top':15}),
     ], style={'background-color': 'rgba(211, 211, 211, 0.05)'}),
     dbc.Row([
         ts_bar_chart
