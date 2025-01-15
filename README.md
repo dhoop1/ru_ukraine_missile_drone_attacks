@@ -7,7 +7,7 @@ See a static image of the dashboard included here, and find the dynamic (live) d
 
 _(Note -- the live dashboard may take up to 1-2 minutes to load)_
 
-![(static dashboard)](ua5_ru_weapons.png)
+![(static dashboard)](ua8_ru_weapons.png)
 
 **Overview of GitHub Files**
 <br>ua5_ru_weapons.py is the file which is read and served to Render.com's web services app.
