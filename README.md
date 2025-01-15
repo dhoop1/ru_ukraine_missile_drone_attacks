@@ -7,12 +7,12 @@ See a static image of the dashboard included here, and find the dynamic (live) d
 
 _(Note -- the live dashboard may take up to 1-2 minutes to load)_
 
-![(static dashboard)](ua5_ru_weapons.png)
+![(static dashboard)](ua8_ru_weapons.png)
 
 **Overview of GitHub Files**
-<br>ua5_ru_weapons.py is the file which is read and served to Render.com's web services app.
-<br>ua5j_ru_weapons.ipynb is a Jupyter Notebook version of the same file (in which the data-cleaning and Dash app was initially coded).
-<br>ua5_ru_weapons.png is a static image of the dashboard, as captured from running ua5j_ru_weapons.ipynb.
+<br>ua8_ru_weapons.py is the file which is read and served to Render.com's web services app.
+<br>ua8j_ru_weapons.ipynb is a Jupyter Notebook version of the same file (in which the data-cleaning and Dash app was initially coded).
+<br>ua8_ru_weapons.png is a static image of the dashboard, as captured from running ua5j_ru_weapons.ipynb.
 <br>The other files contain digital assets and data files used in preparing the data and dashboard.
 
 **Data Source**
