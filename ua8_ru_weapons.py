@@ -56,6 +56,27 @@ details0_df = details0_df_orig.copy()
 model_list = attacks_df["model"].unique()
 model_count = attacks_df["model"].value_counts()
 
+
+# %%
+#@title ### Create kaggle_last_updated (date)
+
+# Create kaggle_last_updated variable for the date that the kaggle dataset was last updated
+import zipfile
+import datetime
+with zipfile.ZipFile("massive-missile-attacks-on-ukraine.zip", "r") as zip_ref:
+    for file_info in zip_ref.infolist():
+       kaggle_info_date = file_info.date_time
+
+kaggle_last_updated = datetime.date(kaggle_info_date[0], kaggle_info_date[1], kaggle_info_date[2])
+kaggle_last_updated_str = kaggle_last_updated.strftime("%m/%d/%Y")
+
+# %%
+#@title ### Early One-off Corrections
+
+# add correct 'source' for 12/27-12/28 2024 attack
+attacks_df_orig.loc[(attacks_df_orig['time_start']=="2024-12-27 23:00") & (attacks_df_orig['time_end']=="2024-12-28 08:30"), 'source'] = "kpszsu/posts/pfbid0HXuzCiwVcdjqxxtzKYADAdQjcLhjGEDhhbXTftMr6NshdikKmET3LFWJePHCCg2Cl"
+attacks_df.loc[(attacks_df['time_start']=="2024-12-27 23:00") & (attacks_df['time_end']=="2024-12-28 08:30"), 'source'] = "kpszsu/posts/pfbid0HXuzCiwVcdjqxxtzKYADAdQjcLhjGEDhhbXTftMr6NshdikKmET3LFWJePHCCg2Cl"
+
 # %% [markdown]
 # ### Set-up Google Sheets Access
 
@@ -65,30 +86,26 @@ subprocess.check_call(['pip', 'install', 'gspread', '--quiet'])
 # %%
 #@title #### Authorize gspread as gc
 
-import gspread, json
+import gspread
+import os
 
 # Authorize gspread with Google Cloud API (per https://docs.gspread.org/en/v6.1.3/oauth2.html#enable-api-access-for-a-project)
 
-try:
-    # gspread auth method for Render.com build -- requires Env Variable Secret
-    gc = gspread.service_account(filename='/etc/secrets/GOOGLE_KAGGLE_CREDENTIALS')
+if os.environ.get("GOOGLE_KAGGLE_CREDENTIALS") is None:
 
-except FileNotFoundError:
-    if os.environ.get("GOOGLE_KAGGLE_CREDENTIALS") is None:
+    # gspread auth method for VS Code desktop -- requires GC service_account.json in APPDATA
+    gc = gspread.service_account()
 
-        # gspread auth method for VS Code desktop -- requires upload into C:/(user)~/APPDATA
-        gc = gspread.service_account()
-
-    else:
-        # gspread auth method for GitHub Codespaces -- requires Secret value in GitHub 'ru_ukraine_missile_drone_attacks' repo
-        credentials = json.loads(os.environ.get("GOOGLE_KAGGLE_CREDENTIALS"))
-        gc = gspread.service_account_from_dict(credentials)
+else:
+    # gspread auth method for Codespaces -- requires GC service_account.json as value in GitHub 'ru_ukraine_missile_drone_attacks' repo Secrets
+    credentials = eval(os.environ.get("GOOGLE_KAGGLE_CREDENTIALS"))
+    gc = gspread.service_account_from_dict(credentials)
 
 # %%
-#@title #### Update 'csis_kaggle_ru_ukraine_attacks' worksheet with cleaned 'attacks_df' data
+#@title #### Update 'pitferm_kaggle_ru_ukraine_attacks' worksheet with cleaned 'attacks_df' data
 
-# Select worksheet from 'csis_kaggle_ru_ukraine_attacks' spreadsheet
-mad_ref = gc.open('csis_kaggle_ru_ukraine_attacks').worksheet('missile_attacks_daily')
+# Select worksheet from 'pitferm_kaggle_ru_ukraine_attacks' spreadsheet
+mad_ref = gc.open('pitferm_kaggle_ru_ukraine_attacks').worksheet('missile_attacks_daily')
 
 # Clear selected worksheet
 mad_ref.clear()
@@ -96,6 +113,19 @@ mad_ref.clear()
 # Import 'missile_attacks_daily' (from cleaned attacks_df) into gworksheet
 mad_upload = attacks_df.copy()
 mad_ref.update([mad_upload.columns.values.tolist()] + mad_upload.values.tolist())
+
+# %%
+#@title #### Update 'pitferm_kaggle_ru_ukraine_attacks' Introduction worksheet with kaggle_last_updated date
+
+# Create var for Introduction worksheet
+intro_ref = gc.open('pitferm_kaggle_ru_ukraine_attacks').worksheet('Introduction')
+
+# Index row and column (using contents cells)
+cell_last_updated = intro_ref.find("Last Updated")
+cell_mad = intro_ref.find("missile_attacks_daily")
+
+# Update cell at indexed coordinates with kaggle_last_updated
+intro_ref.update_cell(cell_mad.row, cell_last_updated.col, kaggle_last_updated_str)
 
 # %% [markdown]
 # ## Data-cleaning
@@ -141,7 +171,7 @@ cmodel_df = cmodel_df_orig.copy()
 #@title ##### Consolidate data for 'Reassign" clean-up
 
 # Create 'reassign_df' with re-formatted index, and drop 'mod_o_count' and 'note' columns
-reassign = gc.open('csis_kaggle_ru_ukraine_attacks').worksheet('reassign')
+reassign = gc.open('pitferm_kaggle_ru_ukraine_attacks').worksheet('reassign')
 reassign_df = pd.DataFrame(reassign.get_all_values(), columns=reassign.row_values(1))
 reassign_df = reassign_df.iloc[1:, :-2].reset_index(inplace=False, drop=True) # remove duplicate header row and drop last 2 columns
 
@@ -221,7 +251,7 @@ print("Concat complete.")
 
 # %%
 # Create agg_df from gworksheet 'aggregate', and drop 'note' column
-agg = gc.open('csis_kaggle_ru_ukraine_attacks').worksheet('aggregate')
+agg = gc.open('pitferm_kaggle_ru_ukraine_attacks').worksheet('aggregate')
 agg_df = pd.DataFrame(agg.get_all_values(), columns=agg.row_values(1))
 agg_df = agg_df.iloc[1:, :-1].reset_index(inplace=False, drop=True) # remove duplicate header row and drop last column
 
@@ -234,7 +264,7 @@ for ia, rowa in agg_df.iterrows():
 
 # %%
 # Create mdfy_df from gworksheet 'modify', drop last three columns, and update dtypes
-mdfy = gc.open('csis_kaggle_ru_ukraine_attacks').worksheet('modify')
+mdfy = gc.open('pitferm_kaggle_ru_ukraine_attacks').worksheet('modify')
 mdfy_df = pd.DataFrame(mdfy.get_all_values(), columns=mdfy.row_values(1))
 mdfy_df = mdfy_df.iloc[1:, :-6].reset_index(inplace=False, drop=True) # remove duplicate header row and drop last six columns
 mdfy_df[['launched', 'destroyed', 'hit', 'miss']] = mdfy_df[['launched', 'destroyed', 'hit', 'miss']].astype('float') # set mdfy_df 'launched' and 'destroyed' dtypes to float
@@ -318,8 +348,7 @@ print("These discrepances are known and accepted:")
 print("1. C-400 and Iskander-M	7.0	7.0 -- correction from data capture error in Kaggle dataset")
 print("2. Iskander-M/KN-23	-1.0	3.0 -- due to rounding during clean-up")
 print("3. Orlan-10 and ZALA	-1.0	-1.0 -- due to rounding during clean-up")
-print("4. X-101/X-555 and Kalibr and X-59/X-69 -6.0	-5.0 -- due to data correction as specified in Kaggle dataset.")
-print() # blank line
+print("4. X-101/X-555 and Kalibr and X-59/X-69 -6.0	-5.0 -- due to data correction as specified in Kaggle dataset.", "\n")
 
 num_known_discrep = 4    # manually entered
 
@@ -345,7 +374,7 @@ print("X-101/X-555 and Kalibr	Kalibr	43.0	37.0	7.0	37.0")
 # %%
 #@title #### Convert 'ru_model_detail' worksheet into a df
 
-detail = gc.open('csis_kaggle_ru_ukraine_attacks').worksheet('model_detail')
+detail = gc.open('pitferm_kaggle_ru_ukraine_attacks').worksheet('model_detail')
 detail_df = pd.DataFrame(detail.get_all_values(), columns=detail.row_values(1))
 detail_df = detail_df.iloc[1:, :].reset_index(inplace=False, drop=True)
 
@@ -359,26 +388,29 @@ else:
 
 # prompt: Join on inner cmodel_df and detail_df, so that each indexed row in cmodel_df has columns added that mapped over from detail_df.
 
+# Merge cmodel_df and detail_df
 merged_df = pd.merge(cmodel_df, detail_df, on='model', how='inner')
 
-# round 'miss_rate' to two decimal places
+# Round 'miss_rate' to two decimal places
 merged_df['miss_rate'] = merged_df['miss_rate'].round(2)
 
-# set 'start_date' and 'end_date' to datetime
+# Set 'start_date' and 'end_date' to datetime
 merged_df['time_start'] = pd.to_datetime(merged_df['time_start'], format='mixed')
 merged_df['time_end'] = pd.to_datetime(merged_df['time_end'], format='mixed')
+
+# Convert unit_cost_usd with pd.to_numeric()
+merged_df['unit_cost_usd'] = pd.to_numeric(merged_df['unit_cost_usd'].str.replace(',', ''), errors='coerce')
+
+# Sort by 'time_end'
+merged_df = merged_df.sort_values(by='time_end', ascending=False)
+
+# Time-constrain merged_df for data before 28 Dec 2024
+#merged_df = merged_df[merged_df['time_end'] < pd.to_datetime('2025-01-01')]
 
 print('Merge complete.')
 
 # %% [markdown]
-# ## Data Analytics
-
-# %%
-#@title ### Descriptive analytics on cmodel_df
-
-from tabulate import tabulate
-
-print(tabulate(merged_df.groupby(['category'])[['launched', 'hit', 'miss', 'destroyed']].sum().sort_values('launched', ascending=False), headers='keys', tablefmt='simple_outline', floatfmt=",.0f"))
+# ## Dash App
 
 # %% [markdown]
 # ### DPX Components
@@ -410,28 +442,46 @@ import pandas as pd
 
 import dash
 from dash import dash_table, State
+from dash.dash_table.Format import Format, Group, Scheme
 
 #app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SLATE])
 
 # Create the data for the PX table, using df.groupby().agg()
-details_data = merged_df.groupby(detail_df.columns.tolist())[['launched', 'hit', 'miss', 'destroyed', 'miss_rate']].agg({
+details_data = merged_df.groupby(detail_df.columns.tolist())[['launched', 'hit', 'miss', 'destroyed']].agg({ # 'miss_rate', 'destroyed_rate'
             'launched': 'sum',
             'hit': 'sum',
             'miss': 'sum',
             'destroyed': 'sum',
-            'miss_rate': 'mean'
+            #'miss_rate': 'mean',
+            #'destroyed_rate': 'mean'
         }).reset_index()
 
-# Sort the details_data into category and type, descending by max 'launched' value per category and type, then by 'launched' within each 'category-type'
-details_data['miss_rate'] = details_data['miss_rate'].round(2)
+# Insert 'miss_rate' and 'destroyed_rate' (rounded to 2 float) into details_data
+details_data['miss_rate'] = (details_data['miss'] / details_data['launched']).round(2)
 details_data['destroyed_rate'] = (details_data['destroyed'] / details_data['launched']).round(2)
+
+# Sort the details_data into category and type, descending by max 'launched' value per category and type, then by 'launched' within each 'category-type'
 details_data['max_l_cat'] = details_data.groupby(['category'])['launched'].transform('max')
 details_data['max_l_type'] = details_data.groupby(['type'])['launched'].transform('max')
 details_data = details_data.sort_values(by=['max_l_cat', 'max_l_type', 'launched'], ascending=False, inplace=False)
 details_data.drop(columns=['max_l_cat', 'max_l_type'], inplace=True) # drop temporary columns used for sorting
 
 # Create dict of column names to use in detail_table
-details_columns = [{"name": i, "id": i} for i in detail_df.columns.tolist() + ['launched', 'hit', 'miss', 'destroyed', 'miss_rate']]
+details_columns = [{"name": i, "id": i} for i in detail_df.columns.tolist() + ['launched', 'hit', 'miss', 'destroyed', 'miss_rate', 'destroyed_rate']]
+
+text_cols = detail_df.columns.drop('unit_cost_usd').to_list() # list of columns to format as text
+thousands_cols = ['unit_cost_usd', 'launched', 'hit', 'miss', 'destroyed'] # list of columns to format with thousands comma
+percent_cols = ['miss_rate', 'destroyed_rate'] # list of columns to format as percent
+
+for h, i in enumerate(details_columns): # conditionally append 'type' and 'format' to details_columns dict
+    if i.get('name') in text_cols:
+        details_columns[h]['type'] = 'text'
+    if i.get('name') in thousands_cols:
+        details_columns[h]['type'] = 'numeric'
+        details_columns[h]['format'] = format=Format().group(True)
+    if i.get('name') in percent_cols:
+        details_columns[h]['type'] = 'numeric'
+        details_columns[h]['format'] = Format(precision=0, scheme=Scheme.percentage)
 
 # PX table data and html formatting
 details_table = html.Div([
@@ -454,15 +504,13 @@ details_table = html.Div([
             'backgroundColor': 'rgb(50, 50, 50)',
             'color': 'lightgray',
         },
-        style_data_conditional=[
-            {'if': {'column_id': 'miss_rate'}, 'type': 'float', 'format': {'specifier': '.2f'}} # Format with two decimal places
-        ],
         style_cell={'fontSize': 8, 'minwidth': '4%'},
         style_cell_conditional=[
-            {'if': {'column_id': ['model', 'type', 'detail', 'maneuverability']}, 'width': '8%'},
-            {'if': {'column_id': ['category', 'range', 'altitude', 'speed']}, 'width': '7%'},
-            {'if': {'column_id': ['payload_kg', 'accuracy', 'unit_cost_usd']}, 'width': '5.33%'},
-            {'if': {'column_id': ['launched', 'hit', 'miss', 'destroyed', 'miss_rate', 'destroyed_rate']}, 'width': '4%'},
+            {'if': {'column_id': ['model', 'type', 'detail', 'maneuverability']}, 'width': '7.75%'}, #31%
+            {'if': {'column_id': ['category', 'range', 'altitude', 'speed']}, 'width': '6.5%'}, #26%
+            {'if': {'column_id': ['payload_kg', 'accuracy', 'unit_cost_usd']}, 'width': '5%'}, #15%
+            {'if': {'column_id': ['launched', 'hit', 'miss', 'destroyed', 'miss_rate']}, 'width': '4.5%'}, #22.5%
+            {'if': {'column_id': ['destroyed_rate']}, 'width': '5.5%'}, #5.5%
         ],
         #style_table={'overflowX': 'auto'},
         sort_action='native',
@@ -477,44 +525,39 @@ details_table = html.Div([
 # #### DPX app: attacks_table (data)
 
 # %%
-# prompt: Create attacks_table_data grouping merged_df by 'category' and summing ['launched', 'hit', 'miss', 'destroyed'] and averaging ['hit_rate', 'miss_rate', 'destroyed_rate'].
+# Create initial attacks_table_data with group-summed cols
+attacks_table_df = merged_df.copy()
+attacks_table_df['total cost'] = (attacks_table_df['launched'] * attacks_table_df['unit_cost_usd'])
+attacks_table_data = attacks_table_df.groupby('category', observed=False)[['launched', 'hit', 'miss', 'destroyed', 'total cost']].sum().sort_values('launched', ascending=False).reset_index()
+attacks_table_data['total cost'] = attacks_table_data['total cost'].round(0)
 
-# Calculate the averages for 'hit_rate', 'miss_rate', and 'destroyed_rate'
-attacks_table_data = merged_df.groupby('category', observed=False).agg(
-    launched=('launched', 'sum'),
-    hit=('hit', 'sum'),
-    hit_rate=('hit_rate', 'mean'),
-    miss=('miss', 'sum'),
-    miss_rate=('miss_rate', 'mean'),
-    destroyed=('destroyed', 'sum'),
-    destroyed_rate=('destroyed_rate', 'mean')
-).sort_values('launched', ascending=False).reset_index().to_dict('records')
+# Add rate cols to attacks_table_data
+attacks_table_data['hit_rate'] = (attacks_table_data['hit'] / attacks_table_data['launched']).round(2)
+attacks_table_data['miss_rate'] = (attacks_table_data['miss'] / attacks_table_data['launched']).round(2)
+attacks_table_data['destroyed_rate'] = (attacks_table_data['destroyed'] / attacks_table_data['launched']).round(2)
 
-# Calculate totals row for the table
-attacks_table_totals = merged_df.groupby('category', observed=False).agg(
-    launched=('launched', 'sum'),
-    hit=('hit', 'sum'),
-    miss=('miss', 'sum'),
-    destroyed=('destroyed', 'sum'),
-    #hit_rate=('hit_rate', 'mean'),
-    #miss_rate=('miss_rate', 'mean'),
-    #destroyed_rate=('destroyed_rate', 'mean')
-).sum()
+# Add avg_unit_cost col to attacks_table_data
+avg_unit_cost_catg = (attacks_table_df.groupby('category')['total cost'].sum() / attacks_table_df.groupby('category')['launched'].sum()).round(-3)
+attacks_table_data['avg unit cost'] = attacks_table_data['category'].map(avg_unit_cost_catg)
 
-# Create separate "avgs" dict for hit_rate, miss_rate, and destroyed_rate (from overall dataset totals)
-attacks_table_avgs = {
-    'hit_rate': (merged_df['hit'].sum() / merged_df['launched'].sum()).round(2),
-    'miss_rate': (merged_df['miss'].sum() / merged_df['launched'].sum()).round(2),
-    'destroyed_rate': (merged_df['destroyed'].sum() / merged_df['launched'].sum()).round(2)
-}
+# Create separate datasets for main categories (attacks_table_data_main) and incomplete categories (attacks_table_data_minor)
+attacks_table_data_main = attacks_table_data[~attacks_table_data['category'].isin(['UAV - recon', 'aerial bomb', 'IRBM'])].copy()
+attacks_table_data_minor = attacks_table_data[attacks_table_data['category'].isin(['UAV - recon', 'aerial bomb', 'IRBM'])].copy().reset_index(drop=True)
 
-# Create dict of  totals row
-attacks_totals_dict = {'category': 'Total'} # create header-only dict 
-attacks_totals_dict.update(attacks_table_totals) # add sumtotals data
-attacks_totals_dict.update(attacks_table_avgs) # add avgs data
+# Create initial totals row with group-summed cols, and insert into attacks_table_data_main
+attacks_table_df_main = attacks_table_df[~attacks_table_df['category'].isin(['UAV - recon', 'aerial bomb', 'IRBM'])].copy().reset_index(drop=True)
+attacks_table_totals_main = attacks_table_df_main.groupby('category', observed=False)[['launched', 'hit', 'miss', 'destroyed', 'total cost']].sum().sum()
+#attacks_table_totals_main['total cost'] = attacks_table_totals_main['total cost'].round(0)
+attacks_table_data_main.loc['Total', ('launched', 'hit', 'miss', 'destroyed', 'total cost')] = attacks_table_totals_main.values
 
-# Append totals row to the table data
-attacks_table_data.append(attacks_totals_dict)
+# Insert total averages into attacks_table_data, specify 'Total' (for 'category' column), and reset index
+attacks_table_data_main.loc['Total', 'hit_rate'] = (attacks_table_df_main['hit'].sum() / attacks_table_df_main['launched'].sum()).round(2)
+attacks_table_data_main.loc['Total', 'miss_rate'] = (attacks_table_df_main['miss'].sum() / attacks_table_df_main['launched'].sum()).round(2)
+attacks_table_data_main.loc['Total', 'destroyed_rate'] = (attacks_table_df_main['destroyed'].sum() / attacks_table_df_main['launched'].sum()).round(2)
+attacks_table_data_main.loc['Total', 'avg unit cost'] = (attacks_table_df_main['total cost'].sum() / attacks_table_df_main['launched'].sum()).round(-3)
+attacks_table_data_main.loc['Total', 'category'] = 'Total'
+attacks_table_data_main = attacks_table_data_main.reset_index(drop=True)
+
 
 # %%
 #@title attacks_table (html)
@@ -527,32 +570,36 @@ from dash.dash_table.Format import Format, Group, Scheme
 
 
 # Define cell style for 'Table' row
-total_style = [{
-    'if': {
-        'filter_query': '{category} = "Total"',  # Filter for rows where category is 'Total'
-        'column_id': list(attacks_table_data[0].keys())  # Apply across all columns
-    },
-    'backgroundColor': 'rgba(211, 211, 211, 0.1)',  # Set background color
-}]
+total_style = [
+    {
+        'if': {
+            'filter_query': '{category} = "Total"',  # Filter for rows where category is 'Total'
+            'column_id': list(attacks_table_data.columns)  # Apply across all columns
+        },
+        'backgroundColor': 'rgba(211, 211, 211, 0.1)',  # Set background color
+    }
+]
 
 
 # Define attacks_table via html
 attacks_table = html.Div([
-    html.H4("Missile Attacks by Category"),
+    html.H4("Breakdown by Category"),
     dash_table.DataTable(
         id='attacks-table',
         #columns=[{"name": i, "id": i} for i in ['category', 'launched', 'hit', 'miss', 'destroyed']],
         columns=[
-            {"name": 'category', "id": 'category', "type": 'text'},  # Set 'category' to string/object type
-            {"name": 'launched', "id": 'launched', "type": 'numeric', "format": Format().group(True)},  # Set 'launched' to numeric
-            {"name": 'hit', "id": 'hit', "type": 'numeric', "format": Format().group(True)},  # Set 'hit' to numeric
-            {"name": 'hit_rate', "id": 'hit_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
-            {"name": 'miss', "id": 'miss', "type": 'numeric', "format": Format().group(True)},  # Set 'miss' to numeric
-            {"name": 'miss_rate', "id": 'miss_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
-            {"name": 'destroyed', "id": 'destroyed', "type": 'numeric', "format": Format().group(True)},  # Set 'destroyed' to numeric
-            {"name": 'destroyed_rate', "id": 'destroyed_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
+            {"name": 'Category', "id": 'category', "type": 'text'},  # Set 'category' to string/object type
+            {"name": 'Launched', "id": 'launched', "type": 'numeric', "format": Format().group(True)},  # Set 'launched' to numeric
+            #{"name": 'hit', "id": 'hit', "type": 'numeric', "format": Format().group(True)},  # Set 'hit' to numeric
+            {"name": 'Hit', "id": 'hit_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
+            #{"name": 'miss', "id": 'miss', "type": 'numeric', "format": Format().group(True)},  # Set 'miss' to numeric
+            {"name": 'Miss', "id": 'miss_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
+            #{"name": 'destroyed', "id": 'destroyed', "type": 'numeric', "format": Format().group(True)},  # Set 'destroyed' to numeric
+            {"name": 'Destroyed', "id": 'destroyed_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
+            {"name": 'Avg Unit Cost', "id": 'avg unit cost', "type": 'numeric', "format": Format().group(True)},  # Set 'unit_cost_usd' to numeric
+            {"name": 'Total Cost', "id": 'total cost', "type": 'numeric', "format": Format().group(True)},  # Set 'cost (US$M)' to numeric
         ],
-        data=attacks_table_data,
+        data=attacks_table_data_main.to_dict('records'),
         style_header={
             'backgroundColor': 'rgb(30, 30, 30)',
             'color': 'lightgray',
@@ -564,15 +611,66 @@ attacks_table = html.Div([
         style_table={
             'overflowX': 'auto',
             'width': '100%',
-            'margin-bottom': '10px',
+            'margin-bottom': '2px',
         },
         style_cell={'fontSize': 14, 'textAlign': 'center'},
         style_cell_conditional=[
-            {'if': {'column_id': 'category'}, 'width': '23%'}, # Set width for 'category' column
-            {'if': {'column_id': ['launched', 'hit', 'hit_rate' 'miss', 'miss_rate', 'destroyed', 'destroyed_rate']}, 'width': '11%', 'format': {'specifier': ',.0f'}}  # Equal width for other columns, and center-aligned text
+            {'if': {'column_id': 'category'}, 'width': '20%'}, # Set width for 'category' column
+            #{'if': {'column_id': ['launched', 'hit', 'hit_rate' 'miss', 'miss_rate', 'destroyed', 'destroyed_rate']}, 'width': '11%', 'format': {'specifier': ',.0f'}}  # Equal width for other columns, and center-aligned text
+            {'if': {'column_id': ['launched', 'hit_rate' 'miss_rate', 'destroyed_rate']}, 'width': '13%', 'format': {'specifier': ',.0f'}},
+            {'if': {'column_id': ['avg unit cost', 'total cost']}, 'width': '15%', 'format': {'specifier': ',.0f'}},
         ],
         style_data_conditional=total_style  # apply style for 'Total' row
-    )
+    ),
+])
+
+# %%
+#@title attacks_table_minor (html)
+
+attacks_table_minor = html.Div([
+    html.H6("Categories with Incomplete Data", style={'margin-top': '6px'}),
+    dash_table.DataTable(
+        id='attacks-table-minor',
+        #columns=[{"name": i, "id": i} for i in ['category', 'launched', 'hit', 'miss', 'destroyed']],
+        columns=[
+            {"name": 'Category', "id": 'category', "type": 'text'},  # Set 'category' to string/object type
+            {"name": 'Launched', "id": 'launched', "type": 'numeric', "format": Format().group(True)},  # Set 'launched' to numeric
+            #{"name": 'hit', "id": 'hit', "type": 'numeric', "format": Format().group(True)},  # Set 'hit' to numeric
+            {"name": 'Hit', "id": 'hit_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
+            #{"name": 'miss', "id": 'miss', "type": 'numeric', "format": Format().group(True)},  # Set 'miss' to numeric
+            {"name": 'Miss', "id": 'miss_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
+            #{"name": 'destroyed', "id": 'destroyed', "type": 'numeric', "format": Format().group(True)},  # Set 'destroyed' to numeric
+            {"name": 'Destroyed', "id": 'destroyed_rate', "type": 'numeric', "format": Format(precision=0, scheme=Scheme.percentage)},
+            {"name": 'Avg Unit Cost', "id": 'avg unit cost', "type": 'numeric', "format": Format().group(True)},  # Set 'unit_cost_usd' to numeric
+            {"name": 'Total Cost', "id": 'total cost', "type": 'numeric', "format": Format().group(True)},  # Set 'cost (US$M)' to numeric
+        ],
+        data=attacks_table_data_minor.to_dict('records'),
+        style_header={
+            'backgroundColor': 'rgb(30, 30, 30)',
+            'color': 'lightgray',
+        },
+        style_data={
+            'backgroundColor': 'rgb(50, 50, 50)',
+            'color': 'lightgray',
+        },
+        style_table={
+            'overflowX': 'auto',
+            'width': '100%',
+            'margin-right': '20px',
+            'margin-bottom': '2px',
+        },
+        style_cell={'fontSize': 12, 'textAlign': 'center'},
+        style_cell_conditional=[
+            {'if': {'column_id': 'category'}, 'width': '20%'}, # Set width for 'category' column
+            #{'if': {'column_id': ['launched', 'hit', 'hit_rate' 'miss', 'miss_rate', 'destroyed', 'destroyed_rate']}, 'width': '11%', 'format': {'specifier': ',.0f'}}  # Equal width for other columns, and center-aligned text
+            {'if': {'column_id': ['launched', 'hit_rate' 'miss_rate', 'destroyed_rate']}, 'width': '13%', 'format': {'specifier': ',.0f'}},
+            {'if': {'column_id': ['avg unit cost', 'total cost']}, 'width': '15%', 'format': {'specifier': ',.0f'}},
+        ],
+        style_data_conditional=total_style  # apply style for 'Total' row
+    ),
+    html.Div([
+        html.Em("Note: 'aerial bomb' and 'UAV - recon' are significantly under-represented in the Kaggle dataset, and 'IRBM' is miniscule.")
+    ], className="card-text", style={'fontSize': '11px', 'textAlign': 'left', 'margin-left': '2px', 'margin-bottom': '10px'})
 ])
 
 # %% [markdown]
@@ -582,15 +680,6 @@ attacks_table = html.Div([
 #@title intro_info
 
 # brief description and image
-
-# Create kaggle_last_updated variable for the date that the kaggle dataset was last updated
-import zipfile
-import datetime
-with zipfile.ZipFile("massive-missile-attacks-on-ukraine.zip", "r") as zip_ref:
-    for file_info in zip_ref.infolist():
-       kaggle_info_date = file_info.date_time
-
-kaggle_last_updated = datetime.date(kaggle_info_date[0], kaggle_info_date[1], kaggle_info_date[2]).strftime("%m/%d/%Y")
 
 # Create intro 'Description' as dbc.Card()
 intro_text = dbc.Card(
@@ -614,13 +703,12 @@ intro_text = dbc.Card(
             " the Kaggle data, and delivers this dashboard via a Python Dash app, ",
             html.A("GitHub", href="https://github.com/dhoop1/ru_ukraine_missile_drone_attacks"),
             ", and Render.",
-            #html.Br(),
-            #html.Em("Kaggle Data Updated: " + kaggle_last_updated),
-        ], className="card-text", style={'fontSize': '10px', 'textAlign': 'center'},
+        ], className="card-text", style={'fontSize': '11.5px', 'textAlign': 'center'},
         ),
         html.P([
-            html.Em("Kaggle data updated: " + kaggle_last_updated),
-        ], className="card-text", style={'fontSize': '10px', 'textAlign': 'center', 'margin': '0px'}
+            #html.Em("Kaggle data updated: " + "01/05/2025"),
+            html.Em("Kaggle data updated: " + kaggle_last_updated_str),
+        ], className="card-text", style={'fontSize': '11.5px', 'textAlign': 'center', 'margin': '0px'}
         )
     ]),
     #style={'border': '1px solid lightgray', "margin-bottom":"15px"},
@@ -633,6 +721,9 @@ intro_text = dbc.Card(
 # %%
 #@title metrics_bar (data)
 
+# merged_df_main
+merged_df_main = merged_df[~merged_df['category'].isin(['UAV - recon', 'aerial bomb', 'IRBM'])].copy().reset_index(drop=True)
+
 # days_at_war
 from datetime import date
 #min_date = pd.to_datetime(merged_df['time_start'], format="mixed").min()
@@ -641,27 +732,29 @@ today = date.today()
 days_at_war = (today - start_date.date()).days
 
 # weeks_count
-min_date = pd.to_datetime(merged_df['time_start'], format="mixed").min()
+min_date = pd.to_datetime(merged_df_main['time_start'], format="mixed").min()
 today = date.today()
+last_day_2024 = pd.to_datetime("12/31/2024")
 weeks_count = round((today - min_date.date()).days / 7, 0)
 
 # total_launched
-total_launched = merged_df['launched'].sum()
+total_launched = merged_df_main['launched'].sum()
 
 # total_ru_mad_cost
-merged_df['unit_cost_usd'] = merged_df['unit_cost_usd'].astype(str).str.replace(",", "", regex=False)
-merged_df['unit_cost_usd'] = pd.to_numeric(merged_df['unit_cost_usd'], errors='coerce')
-attack_cost = merged_df['launched'] * merged_df['unit_cost_usd'].astype(float)
+#merged_df['unit_cost_usd'] = merged_df['unit_cost_usd'].astype(str).str.replace(",", "", regex=False)
+#merged_df['unit_cost_usd'] = pd.to_numeric(merged_df['unit_cost_usd'], errors='coerce')
+attack_cost = merged_df_main['launched'] * merged_df_main['unit_cost_usd'].astype(float)
 total_ru_mad_cost = (attack_cost.sum()/1000000).round(0)
 
 # weekly_avg_launched
-weekly_avg_launched = total_launched / weeks_count
+weekly_avg_launched = (total_launched / weeks_count).round(0)
 
 # weekly_avg_cost
 weekly_avg_cost = (total_ru_mad_cost / weeks_count).round(0)
 
 # last_30days_launched
-merged_df['time_end'] = pd.to_datetime(merged_df['time_end'], format="mixed")
+merged_df_main['time_end'] = pd.to_datetime(merged_df['time_end'], format="mixed")
+#last_30days = merged_df_main[merged_df_main['time_end'] >= (last_day_2024 - pd.Timedelta(days=30))]
 last_30days = merged_df[merged_df['time_end'] >= (pd.Timestamp(today) - pd.Timedelta(days=30))]
 last_30days_launched = last_30days['launched'].sum()
 
@@ -684,18 +777,18 @@ metrics_data = [{
     }]
 
 metrics_bar4 = html.Div([
-    html.H4("Summary Metrics"), # style={'textAlign': "center"}
+    html.H4("Summary Metrics (Oct 2022-Present)"), # style={'textAlign': "center"}
     dbc.Row([
         dash_table.DataTable(
             id='metrics-table',
             columns=[
                 #dict(id='days-at-war', name="Days \n at War", type='numeric', format=Format().group(True)),
                 dict(id='total-launched', name="Total \n Launched", type='numeric', format=Format().group(True)),
-                dict(id='total-cost', name="Total Cost (US$M)", type='numeric', format=Format().group(True)),
-                dict(id='weekly-avg-launched', name="Weekly Avg \n Launched", type='numeric', format=Format(precision=1, scheme=Scheme.fixed)),
-                dict(id='weekly-avg-cost', name="Weekly Avg \n Cost (US$M)", type='numeric', format=Format().group(True)),
+                dict(id='total-cost', name="Total Cost ($M)", type='numeric', format=Format().group(True)),
+                dict(id='weekly-avg-launched', name="Weekly Avg \n Launched", type='numeric', format=Format().group(True)),
+                dict(id='weekly-avg-cost', name="Weekly Avg \n Cost ($M)", type='numeric', format=Format().group(True)),
                 dict(id='last-30days-launched', name="Last 30 Days Launched", type='numeric', format=Format().group(True)),
-                dict(id='last-30days-cost', name="Last 30 Days \n Cost (US$M)", type='numeric', format=Format().group(True)),
+                dict(id='last-30days-cost', name="Last 30 Days \n Cost ($M)", type='numeric', format=Format().group(True)),
             ],
             data=metrics_data,
             style_header={
@@ -711,8 +804,8 @@ metrics_bar4 = html.Div([
                 'overflowX': 'auto',
                 'border': 'none',
                 #'border-collapse': 'collapse',
-                'margin': 4,
-                'padding': '2% 1% 2% 0%'
+                'margin': 3,
+                'padding': '2% 2% 2% 0%'
             },
             style_data={
                 'backgroundColor': 'transparent',
@@ -743,75 +836,99 @@ metrics_bar4 = html.Div([
 # %%
 #@title attack_size_avg_data
 
-# prompt: Create launched_by_category by creating a df with end_date as the index, and columns of all in 'category', where the values are 'launched' (and fill any missing entries with 0).
+# Create mod_category list (as a list of 'category' values to include)
+as_category_list = ['UAV - munition', 'cruise missile', 'ballistic missile', 'anti-air missile']
 
-# Create attack_size_df and convert time_end datetime to date
+# Create attack_size_df, convert time_end datetime to date, and filter to columns in mod_category_list
 attack_size_df = merged_df.copy()
 attack_size_df['time_end'] = pd.to_datetime(attack_size_df['time_end'], format="mixed").dt.date
-attack_size_df = attack_size_df.rename(columns={'time_end': 'end_date'})
-#attack_size_df['time_end'] = attack_size_df['time_end'].dt.strftime('%m-%d-%Y')
+attack_size_df = attack_size_df.loc[attack_size_df['category'].isin(as_category_list), :]
 
-# Create launched_by_category via pivot table
-launched_by_category = attack_size_df.pivot_table(index='end_date', columns='category', values='launched', aggfunc='sum', fill_value=0)
-launched_by_category['Avg Launched'] = launched_by_category.sum(axis=1)
-#launched_by_category.index = launched_by_category.index.date # converts time_end datetime to date (as index)
-launched_by_category.columns.name = None # removes pivot table level
-launched_by_category = pd.DataFrame(launched_by_category)
-
-# Create bins for daily 'launched' total counts
+# Create bins/labels for daily 'attack size' counts
 bins = [0, 10, 50, 100, float('inf')]
 labels = ['<10', '10-49', '50-99', '100+']
 
-# Add column 'launched size' per bins
-launched_by_category['attack size'] = pd.cut(launched_by_category['Avg Launched'], bins=bins, labels=labels, right=False)
+# Create attack_size_list (as a header-labeled list of 'attack size' labels)
+attack_size_list = ['attack size'] + labels
 
-# Create daily_average_launched_by_category
-daily_average_launched_by_category = launched_by_category.groupby('attack size', observed=False)['Avg Launched'].count().reset_index()
-daily_average_launched_by_category.columns = ['attack size', '# Attacks']
-means = launched_by_category.groupby(['attack size'], observed=False)[['UAV', 'cruise missile', 'ballistic missile', 'anti-air missile', 'aerial bomb', 'IRBM', 'Avg Launched']].mean().reset_index()
-means = means.round(1)
-daily_average_launched_by_category = means.merge(daily_average_launched_by_category, on='attack size', how='left')
-daily_average_launched_by_category_transposed = daily_average_launched_by_category.set_index('attack size').T.reset_index() # transpose df
-daily_average_launched_by_category_transposed = daily_average_launched_by_category_transposed.rename(columns={'index': 'attack size'})
+# Create hit_by_category (as pivot table of 'launched' and 'hit' summed by 'end_date' and 'category')
+launched_by_category = attack_size_df.pivot_table(index='time_end', columns='category', values=('launched', 'hit'), aggfunc='sum', fill_value=0)
+#launched_by_category = launched_by_category.drop(columns=[('launched', 'UAV - recon'), ('launched', 'aerial bomb'), ('launched', 'IRBM'), ('hit', 'UAV - recon'), ('hit', 'aerial bomb'), ('hit', 'IRBM')])
+launched_by_category['Avg Hits'] = launched_by_category['hit'].sum(axis=1) # titling as 'Avg Hits' now, and will later apply .mean()
+launched_by_category['Avg Launched'] = launched_by_category['launched'].sum(axis=1) # titling as 'Avg Launched' now, and will later apply .mean()
+launched_by_category['attack size'] = pd.cut(launched_by_category['Avg Launched'], bins=bins, labels=labels, right=False) # adds new 'attack size' column per bins/labels
+
+# Create daily_avg_hit_by_category (with grouped totals for 'Avg Launched', 'Avg Hits', and '# attacks')
+daily_avg_launched_by_category = launched_by_category.groupby('attack size', observed=False)['Avg Hits'].mean().reset_index() # now becomes a .mean()
+daily_avg_launched_by_category.columns = ['attack size', 'Avg Hits']
+daily_avg_launched_by_category['Avg Launched'] = launched_by_category.groupby('attack size', observed=False)['Avg Launched'].mean().reset_index()['Avg Launched'] # now becomes a .mean()
+daily_avg_launched_by_category['# attacks'] = launched_by_category.groupby('attack size', observed=False)['Avg Launched'].count().values # counts of 'attack size' labels
+daily_avg_launched_by_category = daily_avg_launched_by_category.round(1)
+
+# Create launched_means (by group-averaging from hit_by_category, transposing, and concatting 'Avg Launched')
+launched_means2 = launched_by_category.groupby(['attack size'], observed=False)[[('launched', 'UAV - munition'), ('launched', 'cruise missile'), ('launched', 'ballistic missile'), ('launched', 'anti-air missile')]].mean().reset_index()
+launched_means2 = launched_means2['launched']
+launched_means2.columns = ["(L) " + c for c in as_category_list] # differentiate 'category' labels for 'launched' (in same df/table)
+launched_means2 = launched_means2.T.round(1)
+launched_means2 = pd.concat([daily_avg_launched_by_category['Avg Launched'].to_frame(name='Avg Launched').T, launched_means2], ignore_index=False).reset_index()
+launched_means2.columns = attack_size_list
+
+# create hit_means
+hit_means2 = launched_by_category.groupby(['attack size'], observed=False)[[('hit', 'UAV - munition'), ('hit', 'cruise missile'), ('hit', 'ballistic missile'), ('hit', 'anti-air missile')]].mean().reset_index()
+hit_means2 = hit_means2['hit']
+hit_means2.columns = ["(H) " + c for c in as_category_list] # differentiate 'category' labels for 'hit' (in same df/table)
+hit_means2 = hit_means2.T.round(1)
+hit_means2 = pd.concat([daily_avg_launched_by_category['Avg Hits'].to_frame(name='Avg Hits').T, hit_means2], ignore_index=False).reset_index()
+hit_means2.columns = attack_size_list
+
+# Create attack_size_avg_data (by concatenating 'attack size', '# attacks', launched_means2, and hit_means2)
+attack_size_avg_data = pd.concat([daily_avg_launched_by_category.set_index('attack size')['# attacks'].to_frame().T.reset_index().rename(columns={'index': 'attack size'}), launched_means2, hit_means2], ignore_index=True)
 
 # %%
-#@title attack_size_avg (html)
+#@title attack_size_count (html)
 
 from dash import dash_table, html
 from dash import dash_table
 from dash.dash_table.Format import Format, Group, Scheme
 
-# Define style for 'total' and '# attacks' rows
-total_style = {
+avg_launched_style = {
     'if': {
         'filter_query': '{attack size} = "Avg Launched"',  # Filter for rows where category is '# attacks'
-        'column_id': (['attack size'] + list(daily_average_launched_by_category_transposed.columns))  # Apply across all columns
+        'column_id': attack_size_list  # Apply across all columns
     },
+    'type': 'numeric', 'format': Format(precision=0, scheme=Scheme.fixed),  # Set float point
     'backgroundColor': 'rgba(211, 211, 211, 0.05)',  # Set background color
+    'fontSize': '14px'
+}
+
+avg_hits_style = {
+    'if': {
+        'filter_query': '{attack size} = "Avg Hits"',  # Filter for rows where category is '# attacks'
+        'column_id': attack_size_list  # Apply across all columns
+    },
+    'type': 'numeric', 'format': Format(precision=0, scheme=Scheme.fixed),  # Set float point
+    'backgroundColor': 'rgba(211, 211, 211, 0.05)',  # Set background color
+    'fontSize': '14px',
 }
 
 num_attacks_style = {
     'if': {
-        'filter_query': '{attack size} = "# Attacks"',  # Filter for rows where category is '# attacks'
-        'column_id': (['attack size'] + list(daily_average_launched_by_category_transposed.columns))  # Apply across all columns
+        'filter_query': '{attack size} = "# attacks"',  # Filter for rows where category is '# attacks'
+        'column_id': attack_size_list  # Apply across all columns
     },
-    'type': 'numeric', 'format': Format(precision=0, scheme=Scheme.fixed),  # Set float point
-    'backgroundColor': 'rgba(211, 211, 211, 0.05)',  # Set background color
+    'type': 'numeric', 'format': Format(precision=0, scheme=Scheme.fixed),
+    'fontSize': '14px',
 }
-
 
 
 # Define attack_size_avg DataTable
 attack_size_avg = html.Div([
-    html.H4("Avg Launched and # Attacks, by Size", style={'margin-bottom': '12px'}),
+    html.H4("Avg Launched and Hits, by Attack Size", style={'margin-bottom': '10px'}),
     dash_table.DataTable(
         id='attack-size-avg',
-        columns=[{'id': c, 'name': c} for c in daily_average_launched_by_category_transposed.columns],
-        data=daily_average_launched_by_category_transposed.to_dict('records'),
-        style_header={
-            'backgroundColor': 'rgb(30, 30, 30)',
-            'color': 'lightgray',
-        },
+        columns=[{'id': c, 'name': c} for c in attack_size_list],
+        data=attack_size_avg_data.to_dict('records'),
+        #data=daily_avg_hit_by_category.set_index('attack size')['# attacks'].to_frame().T.reset_index().rename(columns={'index': 'attack size'}).to_dict('records'),
         style_data={
             'backgroundColor': 'rgb(50, 50, 50)',
             'color': 'lightgray',
@@ -819,16 +936,23 @@ attack_size_avg = html.Div([
         style_table={
             'overflowX': 'auto',
             'width': '100%',
+            'border-top': '0',
         },
-        style_cell={'fontSize': 14, 'textAlign': 'center', 'width': '20%'},
+        style_cell={'fontSize': 12, 'textAlign': 'center'},
         style_cell_conditional=[
-            {'if': {'column_id': 'attack size'}, 'backgroundColor': 'rgb(30, 30, 30)'},
-            {'if': {'column_id': list(daily_average_launched_by_category_transposed.drop('attack size', axis=1).columns)}, 'type': 'numeric', 'format': Format(precision=1, scheme=Scheme.fixed)}
+            {'if': {'column_id': 'attack size'}, 'backgroundColor': 'rgb(30, 30, 30)', 'width': '33%'},
+            {'if': {'column_id': attack_size_list[1:]}, 'type': 'numeric', 'format': Format(precision=1, scheme=Scheme.fixed)},
         ],
         style_data_conditional=[
-            total_style,
-            num_attacks_style
+            num_attacks_style,
+            avg_launched_style,
+            avg_hits_style
         ],
+        style_header={
+            'backgroundColor': 'rgb(30, 30, 30)',
+            'color': 'lightgray',
+            'fontSize': '14px',
+        },
     )
 ])
 
@@ -836,7 +960,7 @@ attack_size_avg = html.Div([
 #@title attack_size_metrics (data)
 
 # attack_size_total
-attack_size_total = daily_average_launched_by_category['# Attacks'].sum()
+attack_size_total = daily_avg_launched_by_category['# attacks'].sum()
 
 # attacks_per_week
 attacks_per_week = round(attack_size_total / weeks_count, 1)
@@ -899,7 +1023,7 @@ attack_size_bar = html.Div([
                 {'if': {'column_id': ['attack-size-total', 'avg-launched-per-attack']}, 'background-color': 'rgba(211, 211, 211, 0.1)'},
             ],
         )
-    ], style={'margin-top': '10px'})
+    ]) # style={'margin-top': '10px'}
 ])
 
 # %% [markdown]
@@ -964,7 +1088,7 @@ ts_bar_chart = html.Div([
 
         # time_period
         dbc.Col([
-            dbc.Row(html.Label("Time Period:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin-bottom':1})),
+            dbc.Row(html.Label("Time Period:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin':3})),
             dbc.RadioItems(
                 id='time-period',
                 className="btn-group",
@@ -977,13 +1101,13 @@ ts_bar_chart = html.Div([
                     {'label': 'Quarter', 'value': 'Q'},
                     {'label': 'Year', 'value': 'Y'}
                 ],
-                value='M'  # Default value
-            )
-        ]),
+                value='M',  # Default value
+            ),
+        ], style={'display': 'block', 'textAlign': 'center', 'padding-top': '5px'}),
 
         # yaxis
         dbc.Col([
-            dbc.Row(html.Label("Y-axis:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin-bottom':1})),
+            dbc.Row(html.Label("Y-axis:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin':3})),
             dbc.RadioItems(
                 id='y-axis-value',
                 className="btn-group",
@@ -996,13 +1120,13 @@ ts_bar_chart = html.Div([
                     {'label': 'Miss', 'value': 'miss'},
                     {'label': 'Destroyed', 'value': 'destroyed'}
                 ],
-                value='launched' # Default value
-            )
-        ]),
+                value='launched', # Default value
+            ),
+        ], style={'display': 'block', 'textAlign': 'center', 'padding-top': '5px'}),
 
         # stacked_bar_feature
         dbc.Col([
-            dbc.Row(html.Label("Stacked Bar Feature:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin-bottom':1})),
+            dbc.Row(html.Label("Stacked Bar:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin':3})),
             dbc.RadioItems(
                 id='stacked-bar-feature',
                 className="btn-group",
@@ -1013,13 +1137,13 @@ ts_bar_chart = html.Div([
                     {'label': 'Category', 'value': 'category'},
                     {'label': 'Model', 'value': 'model'}
                 ],
-                value='category' # Default value
-            )
-        ]),
+                value='category', # Default value
+            ),
+        ], style={'display': 'block', 'textAlign': 'center', 'padding-top': '5px'}),
 
         # yaxis2
         dbc.Col([
-            dbc.Row(html.Label("Second Y-Axis:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin-bottom':1})),
+            dbc.Row(html.Label("Second Y-Axis:", style={'textAlign': 'center', 'fontWeight': 'bold', 'margin':3})),
             dbc.Checklist(
                 id='y-axis2-toggle',
                 options=[{'label': 'Launched', 'value': 'launched'}],
@@ -1027,31 +1151,26 @@ ts_bar_chart = html.Div([
                 className="btn-group",
                 inputClassName="btn-check",
                 labelClassName="btn btn-outline-primary",
-                labelCheckedClassName="active"
-            )
-        ])
-    ]),
-
-
-    # second row - radio buttons
-    dbc.Row([
+                labelCheckedClassName="active",
+            ),
+        ], style={'display': 'block', 'textAlign': 'center', 'padding-top': '5px'}),
 
         # 'category' multiple-select buttons
         dbc.Col([
-            html.H6("Category:", style={'fontWeight': 'bold', 'display': 'inline-block', 'padding-top': '5px'}),
+            html.H6("Category:", style={'fontWeight': 'bold', 'display': 'block', 'textAlign': 'center', 'margin':5}), # 'padding-top': '5px'
             dbc.Checklist(
                 id='category-slice',
                 options=[{'label': category, 'value': category} for category in merged_df['category'].unique()],
-                value=merged_df['category'].unique().tolist(),  # Default: all categories selected
+                value=merged_df[~merged_df['category'].str.lower().str.contains('recon')]['category'].unique().tolist(),  # Default: all categories but 'UAV - Recon' selected
                 inline=True,  # Arrange options horizontally
                 className="btn-group",
                 inputClassName="btn-check",
                 labelClassName="btn btn-outline-secondary",
                 labelCheckedClassName="active"
             ),
-        ], style={'padding-top': '10px', 'textAlign': 'center'}),
+        ], style={'padding-top': '5px', 'textAlign': 'center'}),
 
-    ]),
+    ], style={'display': 'flex', 'justify-content': 'center'}),
 
     # third row - ts_bar_chart
     dbc.Row([dcc.Graph(id='time-series-chart')]),
@@ -1063,7 +1182,7 @@ ts_bar_chart = html.Div([
         dbc.Col(range_dropdown),
         dbc.Col(speed_dropdown),
         dbc.Col(altitude_dropdown),
-    ], style={'margin-bottom': '30px', 'margin-left': '10px', 'margin-right': '10px'})
+    ], style={'margin-bottom': '30px', 'margin-left': '10px', 'margin-right': '10px'}, justify="center")
 
 ], style={'margin-top': '5px'})
 
@@ -1095,35 +1214,35 @@ app.config.suppress_callback_exceptions = True
 )
 def update_chart(time_period, y_axis_value, stacked_bar_feature, y_axis2, category_slice, selected_range, selected_speed, selected_altitude):
     # Create a temp_df from merged_df
-    temp_df3 = merged_df.copy()
+    ts_bar_df = merged_df.copy()
 
     # If toggled-on details_dropdowns, then apply filters
     #if '(show below)' in details_dropdown:
 
     # Filter the data based on model details 'type', 'range', 'altitude', and 'speed'
     #if selected_type:
-    #    temp_df3 = temp_df3[temp_df3['type'].isin(selected_type)]
+    #    ts_bar_df = ts_bar_df[ts_bar_df['type'].isin(selected_type)]
     if selected_range:
-        temp_df3 = temp_df3[temp_df3['range'].isin(selected_range)]
+        ts_bar_df = ts_bar_df[ts_bar_df['range'].isin(selected_range)]
     if selected_speed:
-        temp_df3 = temp_df3[temp_df3['speed'].isin(selected_speed)]
+        ts_bar_df = ts_bar_df[ts_bar_df['speed'].isin(selected_speed)]
     if selected_altitude:
-        temp_df3 = temp_df3[temp_df3['altitude'].isin(selected_altitude)]
+        ts_bar_df = ts_bar_df[ts_bar_df['altitude'].isin(selected_altitude)]
 
-    # Add 'time_period' to temp_df3 (by resampling 'time_end')
-    temp_df3['time_end'] = pd.to_datetime(merged_df['time_end'], format="mixed")
-    temp_df3['time_period'] = temp_df3['time_end'].dt.to_period(time_period)
-    temp_df3['time_period'] = temp_df3['time_period'].astype(str)
+    # Add 'time_period' to ts_bar_df (by resampling 'time_end')
+    ts_bar_df['time_end'] = pd.to_datetime(merged_df['time_end'], format="mixed")
+    ts_bar_df['time_period'] = ts_bar_df['time_end'].dt.to_period(time_period)
+    ts_bar_df['time_period'] = ts_bar_df['time_period'].astype(str)
 
     # 1. Generate complete time range
     all_periods = pd.period_range(
-        start=temp_df3['time_end'].min(),
-        end=temp_df3['time_end'].max(),
+        start=ts_bar_df['time_end'].min(),
+        end=ts_bar_df['time_end'].max(),
         freq=time_period
     ).astype(str).tolist()
 
     # Slice data (by category_slice) and groupby/sum (by stacked_bar_feature)
-    sliced_data = temp_df3[temp_df3['category'].isin(category_slice)].reset_index()
+    sliced_data = ts_bar_df[ts_bar_df['category'].isin(category_slice)].reset_index()
     grouped_data = sliced_data.groupby(['time_period', stacked_bar_feature])[y_axis_value].sum().reset_index()
 
     # 2. Reindex and fill missing values
@@ -1161,7 +1280,7 @@ def update_chart(time_period, y_axis_value, stacked_bar_feature, y_axis2, catego
     # 4. Create a line chart from the second axis for 'launched' (if y_axis_value not 'launched')
     if 'launched' in y_axis2:
 
-        launched_data = temp_df3.groupby('time_period')['launched'].sum().reset_index()
+        launched_data = ts_bar_df.groupby('time_period')['launched'].sum().reset_index()
         #yaxis2_range = [0, launched_data['launched'].max()]
 
         fig.add_scatter(
@@ -1199,7 +1318,7 @@ def update_chart(time_period, y_axis_value, stacked_bar_feature, y_axis2, catego
             showlegend=False
         )
 
-    # Space further down on y-axis if Stacked Bar Feature is 'model'
+    # Space legend further down on y-axis if Stacked Bar Feature is 'model'
     if stacked_bar_feature == 'model':
         fig.update_layout(
             legend=dict(
@@ -1242,9 +1361,10 @@ app.layout = html.Div([
         dbc.Col([
             dbc.Row([metrics_bar4], className='pt-0 pb-6 pl-2 pr-2'),
             dbc.Row([attacks_table], className='pt-6'),
+            dbc.Row([attacks_table_minor], className='pt-6 pr-10')
             ], width=6, style={'margin-top':15}),
         dbc.Col([
-            dbc.Row([attack_size_avg], className='pt-6 pb-0 pl-2 pr-2'),
+            dbc.Row([attack_size_avg], className='pt-6 pb-2 pl-2 pr-2'),
             dbc.Row([attack_size_bar], className='pb-3'),
             ], width=4, style={'margin-top':15}),
     ], style={'background-color': 'rgba(211, 211, 211, 0.05)'}),
@@ -1254,7 +1374,8 @@ app.layout = html.Div([
     dbc.Row([
         details_table
     ], style={'background-color': 'rgba(211, 211, 211, 0.05)'})
+
 ])
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=True, port=8050)
