@@ -87,19 +87,24 @@ subprocess.check_call(['pip', 'install', 'gspread', '--quiet'])
 #@title #### Authorize gspread as gc
 
 import gspread
-import os
+import os, json
 
 # Authorize gspread with Google Cloud API (per https://docs.gspread.org/en/v6.1.3/oauth2.html#enable-api-access-for-a-project)
 
-if os.environ.get("GOOGLE_KAGGLE_CREDENTIALS") is None:
+try:
+    # gspread auth method for Render.com build -- requires Env Variable Secret
+    gc = gspread.service_account(filename='/etc/secrets/GOOGLE_KAGGLE_CREDENTIALS')
 
-    # gspread auth method for VS Code desktop -- requires GC service_account.json in APPDATA
-    gc = gspread.service_account()
+except FileNotFoundError:
+    if os.environ.get("GOOGLE_KAGGLE_CREDENTIALS") is None:
 
-else:
-    # gspread auth method for Codespaces -- requires GC service_account.json as value in GitHub 'ru_ukraine_missile_drone_attacks' repo Secrets
-    credentials = eval(os.environ.get("GOOGLE_KAGGLE_CREDENTIALS"))
-    gc = gspread.service_account_from_dict(credentials)
+        # gspread auth method for VS Code desktop -- requires upload into C:/(user)~/APPDATA
+        gc = gspread.service_account()
+
+    else:
+        # gspread auth method for GitHub Codespaces -- requires Secret value in GitHub 'ru_ukraine_missile_drone_attacks' repo
+        credentials = json.loads(os.environ.get("GOOGLE_KAGGLE_CREDENTIALS"))
+        gc = gspread.service_account_from_dict(credentials)
 
 # %%
 #@title #### Update 'pitferm_kaggle_ru_ukraine_attacks' worksheet with cleaned 'attacks_df' data
