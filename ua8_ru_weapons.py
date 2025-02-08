@@ -6,6 +6,7 @@
 
 import subprocess, os
 
+subprocess.check_call(['python.exe', '-m', 'pip', 'install', '--upgrade pip'])
 subprocess.check_call(['pip', 'install', 'kaggle', '--quiet'])
 subprocess.check_call(['kaggle', 'datasets', 'download', 'piterfm/massive-missile-attacks-on-ukraine', '--force'])
 
